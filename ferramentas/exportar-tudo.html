@@ -34,11 +34,9 @@ const vai=k=>/^(questia_|qia_)/.test(k)&&!FORA.includes(k)&&!/^questia_(snap_|v3
 const req=r=>new Promise((ok,err)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>err(r.error);});
 
 async function lerIndexedDB(){
-  // Não cria banco novo: se ele não existir aqui, avisa em vez de exportar vazio.
-  if(indexedDB.databases){
-    const lista=await indexedDB.databases();
-    if(!lista.some(d=>d.name==='questia_db'))return null;
-  }
+  // Abre direto, sem consultar indexedDB.databases(): em página aberta como arquivo
+  // (file:///) essa lista pode vir vazia mesmo com o banco existindo, e a ferramenta
+  // exportava só a cópia de reserva das questões, sem o histórico.
   const db=await new Promise((ok,err)=>{const r=indexedDB.open('questia_db');r.onsuccess=()=>ok(r.result);r.onerror=()=>err(r.error);});
   const tem=n=>db.objectStoreNames.contains(n);
   const ler=(st,fn)=>tem(st)?req(fn(db.transaction(st,'readonly').objectStore(st))):Promise.resolve(null);
