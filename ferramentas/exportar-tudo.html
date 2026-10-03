@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuestIA — Exportar tudo</title>
+<style>
+:root{--bg:#f5f2ed;--surface:#fff;--ink:#1a1714;--muted:#6f655c;--border:#e0d9cf;--accent:#c0392b;--ok:#16a34a}
+@media (prefers-color-scheme:dark){:root{--bg:#17181c;--surface:#1f2024;--ink:#e8e5e0;--muted:#a19d95;--border:#33343a;--accent:#e0574a;--ok:#3ddc84}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,sans-serif;padding:24px 16px}
+main{max-width:620px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px}
+h1{font-size:22px;margin:0 0 8px}
+p{margin:0 0 12px;color:var(--muted)}
+button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:12px 20px;font-size:15px;font-weight:600;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+#saida{margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:8px;white-space:pre-line;display:none}
+.ok{color:var(--ok);font-weight:600}.erro{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<main>
+  <h1>Exportar tudo do QuestIA</h1>
+  <p>Gera um backup <strong>completo</strong>: questões, histórico por dia, tempo estudado, registro de respostas,
+     resumos, flashcards, ranking e configurações. O backup da versão antiga levava só as questões.</p>
+  <p>Abra este arquivo <strong>no mesmo navegador e do mesmo jeito</strong> que você abria o QuestIA antigo
+     (por exemplo, como arquivo salvo em Downloads). Ele só lê os dados, não altera nada.</p>
+  <button id="btn">⬇️ Gerar backup completo</button>
+  <div id="saida"></div>
+</main>
+<script>
+const FORA=['questia_v3','questia_apikey','questia_senha_servidor','questia_last_export','questia_qtd_ultimo_export','questia_last_save_ts','questia_test','questia_apibar'];
+const vai=k=>/^(questia_|qia_)/.test(k)&&!FORA.includes(k)&&!/^questia_(snap_|v3_RESGATE_)/.test(k);
+const req=r=>new Promise((ok,err)=>{r.onsuccess=()=>ok(r.result);r.onerror=()=>err(r.error);});
+
+async function lerIndexedDB(){
+  // Não cria banco novo: se ele não existir aqui, avisa em vez de exportar vazio.
+  if(indexedDB.databases){
+    const lista=await indexedDB.databases();
+    if(!lista.some(d=>d.name==='questia_db'))return null;
+  }
+  const db=await new Promise((ok,err)=>{const r=indexedDB.open('questia_db');r.onsuccess=()=>ok(r.result);r.onerror=()=>err(r.error);});
+  const tem=n=>db.objectStoreNames.contains(n);
+  const ler=(st,fn)=>tem(st)?req(fn(db.transaction(st,'readonly').objectStore(st))):Promise.resolve(null);
+  const questoes=await ler('questoes',s=>s.getAll())||[];
+  const respostas=(await ler('respostas',s=>s.getAll())||[]).map(({seq,...r})=>r);
+  const hist=await ler('meta',s=>s.get('hist'))||{};
+  const rankingHist=await ler('meta',s=>s.get('ranking_hist'))||null;
+  db.close();
+  return{questoes,respostas,hist,rankingHist};
+}
+
+document.getElementById('btn').onclick=async()=>{
+  const saida=document.getElementById('saida'),btn=document.getElementById('btn');
+  saida.style.display='block';saida.textContent='Lendo os dados…';btn.disabled=true;
+  try{
+    let d=null;
+    try{d=await lerIndexedDB();}catch(e){console.warn(e);}
+    const ls={};Object.keys(localStorage).filter(vai).forEach(k=>ls[k]=localStorage.getItem(k));
+    let questoes=d&&d.questoes||[];
+    let hist=d&&d.hist||{};
+    if(!questoes.length){try{questoes=JSON.parse(localStorage.getItem('questia_v3')||'[]');}catch(e){}}
+    if(!Object.keys(hist).length){try{hist=JSON.parse(localStorage.getItem('questia_hist')||'{}');}catch(e){}}
+    if(!questoes.length){
+      saida.innerHTML='<span class="erro">Nenhuma questão encontrada neste navegador/endereço.</span>\n'
+        +'Confira se abriu este arquivo no mesmo navegador do QuestIA antigo. No Firefox, coloque este arquivo na mesma pasta do HTML antigo antes de abrir.';
+      btn.disabled=false;return;
+    }
+    const respostas=d&&d.respostas||[];
+    const payload={versao:'2.0',exportadoEm:new Date().toISOString(),totalQuestoes:questoes.length,questoes,
+      extras:{hist,respostas,rankingHist:d&&d.rankingHist||null,localStorage:ls}};
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(payload)],{type:'application/json'}));
+    a.download='questia-backup-completo-'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.json';
+    a.click();
+    let nr=0;try{nr=JSON.parse(ls.questia_resumos||'[]').length;}catch(e){}
+    saida.innerHTML='<span class="ok">✓ Backup completo baixado.</span>\n'
+      +questoes.length+' questões · '+Object.keys(hist).length+' dias de histórico · '+respostas.length+' respostas · '+nr+' resumos\n\n'
+      +'Agora, no QuestIA novo: Backup → Selecionar arquivo .json → escolha este arquivo → "Mesclar com atual".';
+  }catch(e){
+    saida.innerHTML='<span class="erro">Falhou: '+(e&&e.message||e)+'</span>';
+  }
+  btn.disabled=false;
+};
+</script>
+</body>
+</html>

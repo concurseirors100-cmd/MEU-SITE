@@ -1,5 +1,6 @@
 let questions=[],bancoBloqueado=false;
 let resumos=[],notaAlvoQuestao=null; // anotações rápidas coletadas durante o estudo, organizadas por matéria/subtema
+let pendingImportExtras=null;
 let pdfText='',numQuestoes=5,dueQueue=[],dueIdx=0,sessOk=0,sessErr=0,pendingGenerated=[],pendingImportData=null,currentCorrect=0;
 let ratingLock=false,ignorarLimite=false,metaEstourada=false;
 let cardMostradoEm=0, cliqueCorreto=null;
@@ -3357,10 +3358,32 @@ async function renderMistura(){
 function renderStats(){renderSubtemas();renderMistura();const ac=questions.reduce((a,q)=>a+(q.acertos||0),0),er=questions.reduce((a,q)=>a+(q.erros||0),0),pct=(ac+er)>0?Math.round(ac/(ac+er)*100):null;document.getElementById('st-total').textContent=questions.length;document.getElementById('st-ac').textContent=ac;document.getElementById('st-er').textContent=er;document.getElementById('st-pct').textContent=pct!==null?pct+'%':'—';const byMat={};questions.forEach(q=>{const m=q.materia||'Sem matéria';if(!byMat[m])byMat[m]={ac:0,er:0,tot:0};byMat[m].ac+=q.acertos||0;byMat[m].er+=q.erros||0;byMat[m].tot++;});const mxT=Math.max(...Object.values(byMat).map(v=>v.ac+v.er),1);document.getElementById('mat-chart').innerHTML=Object.entries(byMat).sort((a,b)=>b[1].tot-a[1].tot).slice(0,7).map(([nm,v])=>{const t=v.ac+v.er,p=t>0?Math.round(v.ac/t*100):0,w=t>0?Math.round(t/mxT*100):5;return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${nm}</span><span class="mat-pct">${t>0?p+'%':v.tot+' q'}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const mxCount=Math.max(...Object.values(byMat).map(v=>v.tot),1);document.getElementById('mat-count-chart').innerHTML=Object.entries(byMat).sort((a,b)=>a[1].tot-b[1].tot).map(([nm,v])=>{const w=Math.round(v.tot/mxCount*100);return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${esc(nm)}</span><span class="mat-pct">${v.tot} q</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%;background:var(--accent2)"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const byBan={};questions.forEach(q=>{const b=q.banca||'Outras';byBan[b]=(byBan[b]||0)+1;});const sorted=Object.entries(byBan).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=Math.max(...sorted.map(([,v])=>v),1),cols=['var(--accent)','var(--accent2)','var(--green)','var(--yellow)','#8b5cf6','#ec4899'];document.getElementById('banca-chart').innerHTML=sorted.map(([nm,cnt],i)=>`<div class="bar-g"><div class="bar-v">${cnt}</div><div class="bar-b" style="height:${Math.round(cnt/mx*100)}%;background:${cols[i%cols.length]}"></div><div class="bar-l">${nm.substring(0,7)}</div></div>`).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';}
 
 // BACKUP — EXPORTAR
-function exportarBanco(){
+// ===== BACKUP COMPLETO =====
+// Até a versão anterior o .json levava só as questões. Histórico por dia (gráfico
+// "Atividade por dia" e tempo estudado), registro de respostas (Dashboard, Ranking,
+// Meta), resumos, flashcards e configurações ficavam para trás — ao abrir o app em
+// outro endereço ou aparelho, tudo isso sumia mesmo depois de importar o backup.
+// Agora vai tudo junto em "extras". Backups antigos, sem extras, continuam valendo.
+const LS_FORA_DO_BACKUP=['questia_v3','questia_apikey','questia_senha_servidor','questia_last_export',
+  'questia_qtd_ultimo_export','questia_last_save_ts','questia_test','questia_apibar'];
+function chaveVaiNoBackup(k){
+  if(!/^(questia_|qia_)/.test(k))return false;
+  if(LS_FORA_DO_BACKUP.includes(k))return false;
+  return !/^questia_(snap_|v3_RESGATE_)/.test(k);   // cópias de segurança antigas e chave da API ficam de fora
+}
+async function coletarExtras(){
+  const ls={};
+  try{Object.keys(localStorage).filter(chaveVaiNoBackup).forEach(k=>ls[k]=localStorage.getItem(k));}catch(e){}
+  let respostas=[],rankingHist=null;
+  try{respostas=(await lerLog()).map(({seq,...r})=>r);}catch(e){}
+  try{if(idbOk)rankingHist=await idbLer(ST_META,'ranking_hist');}catch(e){}
+  return{hist:histCache||{},respostas,rankingHist:rankingHist||null,localStorage:ls};
+}
+async function exportarBanco(){
   if(questions.length===0){notify('Banco vazio — nada para exportar','err');return;}
-  const payload={versao:'1.0',exportadoEm:new Date().toISOString(),totalQuestoes:questions.length,questoes:questions};
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const extras=await coletarExtras();
+  const payload={versao:'2.0',exportadoEm:new Date().toISOString(),totalQuestoes:questions.length,questoes:questions,extras};
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   const dateStr=new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
@@ -3368,7 +3391,65 @@ function exportarBanco(){
   try{localStorage.setItem('questia_last_export',new Date().toISOString());
       localStorage.setItem('questia_qtd_ultimo_export',String(questions.length));}catch(e){}
   renderBackupInfo();
-  notify(`✓ Backup de ${questions.length} questões exportado!`,'ok');
+  notify(`✓ Backup completo: ${questions.length} questões, ${Object.keys(extras.hist).length} dias de histórico, ${extras.respostas.length} respostas`,'ok');
+}
+// Restaura os extras de um backup. "substituir" troca tudo pelo do arquivo;
+// "mesclar" só acrescenta o que falta, sem apagar nada que já está neste navegador.
+function totalDia(h){return h?(h.ac||0)+(h.er||0):0;}
+function mesclarListaPorId(atualJson,novoJson){
+  let a=[],b=[];try{a=JSON.parse(atualJson||'[]');}catch(e){}try{b=JSON.parse(novoJson||'[]');}catch(e){}
+  if(!Array.isArray(a)||!Array.isArray(b))return novoJson;
+  const ids=new Set(a.map(x=>x&&x.id));
+  return JSON.stringify(a.concat(b.filter(x=>x&&!ids.has(x.id))));
+}
+async function aplicarExtras(ex,modo){
+  const subst=modo==='substituir',res={dias:0,respostas:0,chaves:0};
+  // 1) histórico por dia
+  if(ex.hist&&typeof ex.hist==='object'){
+    if(subst){histCache=ex.hist;res.dias=Object.keys(ex.hist).length;}
+    else Object.entries(ex.hist).forEach(([d,h])=>{if(totalDia(h)>totalDia(histCache[d])){histCache[d]=h;res.dias++;}});
+    salvarHist();
+  }
+  // 2) registro de respostas (Dashboard, Ranking, Meta)
+  if(idbOk&&Array.isArray(ex.respostas)&&ex.respostas.length){
+    const atuais=subst?[]:await lerLog();
+    const vistos=new Set(atuais.map(r=>r.ts+'|'+r.qid));
+    const tx=db.transaction(ST_LOG,'readwrite'),st=tx.objectStore(ST_LOG);
+    if(subst)st.clear();
+    ex.respostas.forEach(r=>{
+      if(!r||typeof r.ts!=='number')return;
+      const k=r.ts+'|'+r.qid;if(vistos.has(k))return;vistos.add(k);
+      const {seq,...limpo}=r;st.add(limpo);res.respostas++;
+    });
+    await txFim(tx);
+  }
+  // 3) ranking guardado
+  if(idbOk&&ex.rankingHist&&typeof ex.rankingHist==='object'){
+    let atual={};try{atual=(await idbLer(ST_META,'ranking_hist'))||{};}catch(e){}
+    await idbGravar(ST_META,subst?ex.rankingHist:Object.assign({},ex.rankingHist,atual),'ranking_hist');
+    try{rkCarregado=false;rkHist={};}catch(e){}
+  }
+  // 4) resumos, flashcards e configurações
+  if(ex.localStorage&&typeof ex.localStorage==='object'){
+    Object.entries(ex.localStorage).forEach(([k,v])=>{
+      if(!chaveVaiNoBackup(k)||typeof v!=='string')return;
+      try{
+        const atual=localStorage.getItem(k);
+        let final=v;
+        if(!subst&&atual!==null){
+          if(k==='questia_resumos'||k==='questia_cards')final=mesclarListaPorId(atual,v);
+          else if(k==='questia_rev_hist'){
+            const a=JSON.parse(atual||'{}'),b=JSON.parse(v||'{}');
+            Object.keys(b).forEach(d=>{a[d]=Math.max(a[d]||0,b[d]||0);});final=JSON.stringify(a);
+          }else return;                 // configuração que já existe aqui: mantém a deste navegador
+        }
+        if(final!==atual){localStorage.setItem(k,final);res.chaves++;}
+      }catch(e){}
+    });
+    loadResumos();
+    if(typeof loadCards==='function')loadCards();
+  }
+  return res;
 }
 async function renderBackupInfo(){
   document.getElementById('bi-total').textContent=questions.length;
@@ -3425,17 +3506,17 @@ function iniciarImport(event){
       const data=JSON.parse(e.target.result);
       const questoes=data.questoes||(Array.isArray(data)?data:null);
       if(!questoes||!questoes.length){notify('Arquivo inválido ou sem questões','err');return;}
-      pendingImportData=questoes;
+      pendingImportData=questoes;pendingImportExtras=(data&&data.extras&&typeof data.extras==='object')?data.extras:null;
       document.getElementById('import-warning').innerHTML=questions.length>0?`<strong>⚠️ Atenção:</strong> Você tem ${questions.length} questão(ões) no banco atual. Escolha como proceder abaixo.`:`<strong>ℹ️ Banco vazio.</strong> As questões serão adicionadas normalmente.`;
       const ac=questoes.reduce((a,q)=>a+(q.acertos||0),0),er=questoes.reduce((a,q)=>a+(q.erros||0),0),mats=[...new Set(questoes.map(q=>q.materia).filter(Boolean))];
-      document.getElementById('import-preview').innerHTML=`<div class="import-preview-row"><span class="import-preview-label">Questões no arquivo</span><span class="import-preview-val">${questoes.length}</span></div><div class="import-preview-row"><span class="import-preview-label">Matérias</span><span class="import-preview-val" style="font-family:inherit;font-size:12px">${mats.join(', ')||'—'}</span></div><div class="import-preview-row"><span class="import-preview-label">Acertos registrados</span><span class="import-preview-val">${ac}</span></div><div class="import-preview-row"><span class="import-preview-label">Erros registrados</span><span class="import-preview-val">${er}</span></div><div class="import-preview-row"><span class="import-preview-label">Exportado em</span><span class="import-preview-val" style="font-family:inherit;font-size:12px">${data.exportadoEm?new Date(data.exportadoEm).toLocaleDateString('pt-BR'):'—'}</span></div>`;
+      document.getElementById('import-preview').innerHTML=`<div class="import-preview-row"><span class="import-preview-label">Questões no arquivo</span><span class="import-preview-val">${questoes.length}</span></div><div class="import-preview-row"><span class="import-preview-label">Matérias</span><span class="import-preview-val" style="font-family:inherit;font-size:12px">${mats.join(', ')||'—'}</span></div><div class="import-preview-row"><span class="import-preview-label">Acertos registrados</span><span class="import-preview-val">${ac}</span></div><div class="import-preview-row"><span class="import-preview-label">Erros registrados</span><span class="import-preview-val">${er}</span></div>${(()=>{const x=data&&data.extras;if(!x)return '<div class="import-preview-row"><span class="import-preview-label">Histórico, resumos e estatísticas</span><span class="import-preview-val" style="font-family:inherit;font-size:12px;color:var(--yellow)">não vêm neste arquivo (backup antigo, só questões)</span></div>';let nr=0,nc=0;try{nr=JSON.parse((x.localStorage||{}).questia_resumos||'[]').length;nc=JSON.parse((x.localStorage||{}).questia_cards||'[]').length;}catch(e){}return '<div class="import-preview-row"><span class="import-preview-label">Dias de histórico</span><span class="import-preview-val">'+Object.keys(x.hist||{}).length+'</span></div><div class="import-preview-row"><span class="import-preview-label">Respostas registradas</span><span class="import-preview-val">'+((x.respostas||[]).length)+'</span></div><div class="import-preview-row"><span class="import-preview-label">Resumos · flashcards</span><span class="import-preview-val">'+nr+' · '+nc+'</span></div>';})()}<div class="import-preview-row"><span class="import-preview-label">Exportado em</span><span class="import-preview-val" style="font-family:inherit;font-size:12px">${data.exportadoEm?new Date(data.exportadoEm).toLocaleDateString('pt-BR'):'—'}</span></div>`;
       document.getElementById('import-modal').classList.add('open');
       document.getElementById('import-file').value='';
     }catch(err){notify('Erro ao ler arquivo: JSON inválido','err');}
   };
   reader.readAsText(file);
 }
-function confirmarImport(modo){
+async function confirmarImport(modo){
   if(!pendingImportData)return;
   document.getElementById('import-modal').classList.remove('open');
   // Preserva todos os dados do SM-2 (nextDue, reps, ef, interval) intactos
@@ -3478,7 +3559,15 @@ function confirmarImport(modo){
   }
   if(modo==='substituir'){questions=pendingImportData.map(importQ);}
   else{const ids=new Set(questions.map(q=>q.id));const novas=pendingImportData.filter(q=>!ids.has(q.id)).map(importQ);questions.push(...novas);const dup=pendingImportData.length-novas.length;if(dup>0)notify(`Mesclado! ${novas.length} adicionadas, ${dup} já existiam.`,'ok');}
-  save();pendingImportData=null;updateSidebar();renderBackupInfo();
+  save();pendingImportData=null;
+  if(pendingImportExtras){
+    try{
+      const r=await aplicarExtras(pendingImportExtras,modo);
+      setTimeout(()=>notify(`✓ Histórico restaurado: ${r.dias} dias, ${r.respostas} respostas, ${r.chaves} itens (resumos, cards, configurações)`,'ok'),2500);
+    }catch(err){console.error('[QuestIA] extras do backup:',err);setTimeout(()=>notify('⚠️ Questões importadas, mas o histórico falhou: '+(err&&err.message||err),'err'),2500);}
+    pendingImportExtras=null;
+  }
+  updateSidebar();renderBackupInfo();
   notify(modo==='substituir'?`✓ Banco substituído com ${questions.length} questões!`:`✓ ${questions.length} questões no banco após mesclagem!`,'ok');
 }
 // ===== APLICAR TAXONOMIA =====
