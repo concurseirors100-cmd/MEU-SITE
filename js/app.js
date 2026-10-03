@@ -832,14 +832,17 @@ function formatQuestionText(text){
     for(const m of candidatos){
       if(!validos.has(m.index))continue;
       out+=texto.slice(last,m.index);
-      out+=(m.index===0?'':'<br><br>')+'<strong>'+m[1]+'.</strong>';
+      // Item que já começa um parágrafo (ou o texto) não ganha outra quebra — senão
+      // o espaço entre os itens dobrava.
+      const jaQuebrado=m.index===0||/(?:<br>\s*)$/.test(out);
+      out+=(jaQuebrado?'':'<br><br>')+'<strong>'+m[1]+'.</strong>';
       last=m.index+m[0].length;
     }
     out+=texto.slice(last);
     return out;
   }
-  esc=quebrarListaSequencial(esc,/(?<=\s|^)(\d{1,2})\.(?=\s)/g,Number);
-  esc=quebrarListaSequencial(esc,/(?<=\s|^)([IVXLCDM]{1,4})\.(?=\s)/g,romanParaInt);
+  esc=quebrarListaSequencial(esc,/(?<=\s|^|<br>)(?:<strong>)?(\d{1,2})\.(?:<\/strong>)?(?=\s)/g,Number);
+  esc=quebrarListaSequencial(esc,/(?<=\s|^|<br>)(?:<strong>)?([IVXLCDM]{1,4})\.(?:<\/strong>)?(?=\s)/g,romanParaInt);
   esc=esc.replace(/\u0003TBL(\d+)\u0003/g,(m,i)=>tabelas[+i]||'');
   esc=esc.replace(/\u0004COD(\d+)\u0004/g,(m,i)=>blocosCodigo[+i]||'');
   esc=esc.replace(/(?:<br>){0,2}\u0005FORM(\d+)\u0005(?:<br>){0,2}/g,(m,i)=>formulas[+i]||'');
