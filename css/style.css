@@ -7,6 +7,8 @@
   --blue-light:#eff6ff;--blue-border:#bfdbfe;--blue-text:#1d4ed8;
   --red-light:#fef2f2;--red-border:#fecaca;--red-text:#b91c1c;
   --indigo-light:#eef2ff;--indigo-border:#c7d2fe;--indigo-text:#4338ca;
+  --susp-bg:#f5f3ff;--susp-ink:#6d28d9;--susp-bd:#ddd6fe;
+  --aviso-bg:#fef3c7;--aviso-ink:#92400e;--aviso-bd:#fde68a;--aviso-forte:#b45309;
   --radius:10px;--shadow:0 1px 4px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.04);--shadow-lg:0 4px 24px rgba(0,0,0,.12);
 }
 /* ===== MODO NOTURNO =====
@@ -22,6 +24,8 @@
   --blue-light:#182338;--blue-border:#2d4468;--blue-text:#7ba7f7;
   --red-light:#33191a;--red-border:#5c2a2c;--red-text:#f28b8b;
   --indigo-light:#221f3d;--indigo-border:#3d3870;--indigo-text:#a5a0f5;
+  --susp-bg:#261d3d;--susp-ink:#c4b5fd;--susp-bd:#4c3a7a;
+  --aviso-bg:#33270f;--aviso-ink:#f0c07a;--aviso-bd:#5a4420;--aviso-forte:#f0a93d;
   --shadow:0 1px 4px rgba(0,0,0,.4),0 4px 16px rgba(0,0,0,.3);--shadow-lg:0 4px 24px rgba(0,0,0,.55);
 }
 [data-theme="dark"] .loading-overlay{background:rgba(23,24,28,.9)}
