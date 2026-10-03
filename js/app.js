@@ -4159,7 +4159,7 @@ async function gerarPratica(refazer){
     renderPratica(real,true);
     notify('💡 "Na prática" gerado e salvo nesta questão','ok');
   }catch(e){
-    const msg=e.status===401?'chave inválida':e.status===429?'limite de uso atingido, tente em instantes':/credit|balance|billing/i.test(e.message)?'sem créditos na conta da Anthropic':e.message;
+    const msg=e.status===401?(getChaveDireta()?'chave inválida (a chave sk-ant-... salva neste navegador foi recusada)':e.message):e.status===429?'limite de uso atingido, tente em instantes':/credit|balance|billing/i.test(e.message)?'sem créditos na conta da Anthropic':e.message;
     box.innerHTML=`<div class="pratica-box"><div class="pratica-erro">Não consegui gerar: ${esc(msg)}</div></div>`;
     notify('Falha no "Na prática": '+msg,'err');
   }finally{praticaGerando=false;}

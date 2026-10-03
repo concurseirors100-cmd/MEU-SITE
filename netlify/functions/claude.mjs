@@ -26,12 +26,14 @@ function senhaConfere(recebida, esperada) {
 export default async (req) => {
   if (req.method !== 'POST') return json(405, 'Use POST.');
 
-  const chave = process.env.ANTHROPIC_API_KEY;
-  const senha = process.env.QUESTIA_SENHA;
+  // trim: espaço ou quebra de linha colados junto com o valor no painel do Netlify
+  // faziam a chave ser recusada pela Anthropic e a senha nunca conferir.
+  const chave = (process.env.ANTHROPIC_API_KEY || '').trim();
+  const senha = (process.env.QUESTIA_SENHA || '').trim();
   if (!chave || !senha) {
     return json(500, 'Servidor sem configuração: defina ANTHROPIC_API_KEY e QUESTIA_SENHA nas variáveis de ambiente do Netlify.');
   }
-  if (!senhaConfere(req.headers.get('x-questia-senha'), senha)) {
+  if (!senhaConfere((req.headers.get('x-questia-senha') || '').trim(), senha)) {
     return json(401, 'Senha do servidor incorreta. Confira o campo da chave no topo do QuestIA.');
   }
 
@@ -58,6 +60,9 @@ export default async (req) => {
     body: JSON.stringify(corpo),
   });
 
+  if (resposta.status === 401) {
+    return json(502, 'A Anthropic recusou a chave guardada no Netlify (ANTHROPIC_API_KEY). Confira se ela foi colada inteira, começando com sk-ant-, e se não foi apagada no console da Anthropic.');
+  }
   return new Response(await resposta.text(), {
     status: resposta.status,
     headers: { 'Content-Type': 'application/json' },
