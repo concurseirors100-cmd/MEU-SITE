@@ -2327,6 +2327,14 @@ function renderHistChart(){
   const days=[];
   let cur=new Date(from+'T00:00:00');
   const end=new Date(to+'T00:00:00');
+  // Ao digitar a data, o navegador dispara a mudança no meio da digitação, com anos
+  // como 0002. Isso gerava centenas de milhares de dias e travava a página com
+  // "Maximum call stack size exceeded". Período absurdo agora só mostra um aviso.
+  const MAX_DIAS_GRAFICO=731;
+  if(isNaN(cur)||isNaN(end)||(end-cur)/86400000>MAX_DIAS_GRAFICO){
+    document.getElementById('hist-chart').innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px">Escolha um período de até 2 anos</div>';
+    return;
+  }
   while(cur<=end){
     days.push(ymd(cur));
     cur.setDate(cur.getDate()+1);
@@ -2347,7 +2355,7 @@ function renderHistChart(){
     <div style="background:var(--blue-light);border-radius:8px;padding:10px 16px;text-align:center;border:1px solid var(--blue-border)"><div style="font-size:22px;font-weight:800;color:var(--accent2);font-family:'Instrument Serif',serif">${pct}%</div><div style="font-size:11px;color:var(--accent2);text-transform:uppercase;letter-spacing:.5px">Acerto</div></div>
     <div style="background:var(--surface2);border-radius:8px;padding:10px 16px;text-align:center"><div style="font-size:22px;font-weight:800;color:var(--ink);font-family:'Instrument Serif',serif">${totDias}</div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Dias ativos</div></div>`;
 
-  const maxTotal=Math.max(...days.map(d=>hist[d]?(hist[d].ac||0)+(hist[d].er||0):0),1);
+  const maxTotal=days.reduce((m,d)=>Math.max(m,hist[d]?(hist[d].ac||0)+(hist[d].er||0):0),1);
   const showLabel=days.length<=31;
   // Largura dinâmica da barra
   const barW=days.length<=14?'28px':days.length<=31?'18px':days.length<=60?'10px':'6px';
@@ -2400,7 +2408,7 @@ function renderTempoEstudado(days,hist){
     <div style="background:var(--blue-light);border-radius:8px;padding:10px 16px;text-align:center;border:1px solid var(--blue-border)"><div style="font-size:22px;font-weight:800;color:var(--accent2);font-family:'Instrument Serif',serif">${fmtTempo(mediaMs)}</div><div style="font-size:11px;color:var(--accent2);text-transform:uppercase;letter-spacing:.5px">Média/dia ativo</div></div>
     <div style="background:var(--green-light);border-radius:8px;padding:10px 16px;text-align:center;border:1px solid rgba(22,163,74,.15)"><div style="font-size:22px;font-weight:800;color:var(--green);font-family:'Instrument Serif',serif">${fmtTempo(hojeMs)}</div><div style="font-size:11px;color:var(--green);text-transform:uppercase;letter-spacing:.5px">Hoje</div></div>`;
 
-  const maxMs=Math.max(...days.map(d=>msDoDia(d)),1);
+  const maxMs=days.reduce((m,d)=>Math.max(m,msDoDia(d)),1);
   const showLabel=days.length<=31;
   const barW=days.length<=14?'28px':days.length<=31?'18px':days.length<=60?'10px':'6px';
   document.getElementById('hist-time-chart').innerHTML=days.map(d=>{
