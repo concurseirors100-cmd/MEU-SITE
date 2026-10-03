@@ -7,6 +7,11 @@
 <title>QuestIA — Gerador de Questões Fiscais</title>
 <meta name="description" content="Gerador de questões para concursos fiscais com algoritmo SM-2 de revisão espaçada">
 <meta name="theme-color" content="#1a1714">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="QuestIA">
 <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;%E2%9A%96%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
 <link rel="preconnect" href="https://fonts.googleapis.com/"><link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -53,12 +58,12 @@
   <div class="apikey-banner" id="apikey-banner">
     <button class="apikey-fechar" onclick="toggleApiBar()" title="Ocultar">✕</button>
     <span class="apikey-label">🔑 API Key Anthropic</span>
-    <input type="password" class="apikey-input" id="apikey-input" placeholder="sk-ant-api03-..." autocomplete="off">
+    <input type="password" class="apikey-input" id="apikey-input" placeholder="sk-ant-api03-... ou senha do servidor" autocomplete="off">
     <button class="apikey-save" onclick="saveApiKey()">Salvar</button>
     <span class="apikey-label" style="margin-left:8px">🤖 Modelo</span>
     <input class="apikey-input" id="modelo-input" list="modelos-datalist" style="min-width:240px;flex:0 1 280px" placeholder="claude-sonnet-5-5" onchange="salvarModelo()" autocomplete="off">
     <datalist id="modelos-datalist"><option value="claude-sonnet-5-5"></option><option value="claude-opus-5-5"></option><option value="claude-haiku-4-5-20251001"></option></datalist>
-    <div class="apikey-hint" id="apikey-hint">Cole sua chave da Anthropic (sk-ant-...) para gerar questões.</div>
+    <div class="apikey-hint" id="apikey-hint">Cole sua chave da Anthropic (sk-ant-...) — ou, no site publicado no Netlify, a senha do servidor.</div>
     <div class="apikey-hint" style="opacity:.8">O identificador do modelo muda quando a Anthropic aposenta versões — se a geração parar com erro de modelo, troque aqui. Os atuais ficam em <a href="https://docs.claude.com/en/docs/about-claude/models" target="_blank" rel="noopener" style="color:inherit">docs.claude.com</a>.</div>
   </div>
 
@@ -756,4 +761,11 @@
 <script src="js/dashboard.js"></script>
 
 <script src="js/formulas.js"></script>
+<script>
+// Instalação como app (celular/computador). Só funciona em site publicado (https);
+// aberto como arquivo local o navegador não permite, e o app segue normal.
+if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(e=>console.warn('[QuestIA] service worker:',e)));
+}
+</script>
 </body></html>

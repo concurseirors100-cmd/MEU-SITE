@@ -439,9 +439,7 @@ async function refinarUmCardIA(c){
     +`- "verso": a resposta, no máximo ${IA_LIM_VERSO} caracteres. Sem preâmbulo, sem "a resposta é". Vá direto ao conceito e, se houver, ao número/prazo/artigo que a banca cobra.\n`
     +`- Se o material não permitir formular uma pergunta honesta sem inventar, devolva {"frente":null,"verso":null}.\n\n`
     +`JSON PURO: {"frente":"...","verso":"..."}`;
-  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:getModelo(),max_tokens:400,system,messages:[{role:'user',content:prompt}]})});
+  const res=await chamarClaude({model:getModelo(),max_tokens:400,system,messages:[{role:'user',content:prompt}]});
   if(res.status===429)throw new Error('429');
   if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error((e.error&&e.error.message)||('HTTP '+res.status));}
   const j=await res.json();

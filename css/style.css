@@ -351,7 +351,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--ink);min-h
 
 
 /* letras de alternativa dentro do comentário do professor */
-.com-alt{color:#fff;font-weight:700;letter-spacing:.3px}
+.com-alt{color:var(--ink);font-weight:700;letter-spacing:.3px}
 :root[data-theme="light"] .com-alt,body.light .com-alt{color:#111}
 @keyframes comAltPisca{0%,100%{transform:translateX(0)}15%{transform:translateX(-5px)}30%{transform:translateX(5px)}45%{transform:translateX(-4px)}60%{transform:translateX(4px)}75%{transform:translateX(-2px)}}
 .pisca{display:inline-block;animation:comAltPisca .55s ease;background:var(--yellow-light);border:1px solid rgba(217,119,6,.45);border-radius:5px;padding:0 6px;box-shadow:0 0 0 4px rgba(217,119,6,.13)}
@@ -444,3 +444,57 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--ink);min-h
 .dash-vazio{font-size:12px;color:var(--muted);padding:18px 6px;text-align:center}
 .dash-btn-curva{background:none;border:1px solid var(--border2);border-radius:6px;cursor:pointer;font-size:12px;padding:1px 6px;margin-left:6px;color:var(--ink2)}
 .dash-btn-curva:hover{background:var(--surface2)}
+
+/* ===== CELULAR E TELAS ESTREITAS =====
+   O menu lateral fixo de 240px vira uma barra no topo: logo e botão de tema numa
+   linha, as abas numa faixa que rola para o lado. O resto só aperta espaçamentos
+   e empilha as grades, sem mudar o comportamento de nada. */
+@media (max-width:900px){
+  body{flex-direction:column}
+  .sidebar{position:sticky;top:0;width:100%;min-height:0;bottom:auto;flex-direction:row;flex-wrap:wrap;align-items:center;z-index:50;padding-top:env(safe-area-inset-top)}
+  .logo{padding:10px 16px;border-bottom:none;display:flex;align-items:baseline;gap:10px;flex:1;min-width:0}
+  .logo-icon,.logo-sub{display:none}
+  .logo-title{font-size:21px}
+  .sidebar-bottom{padding:8px 16px;border-top:none;display:flex;align-items:center}
+  .sidebar-stat{display:none}
+  .theme-toggle{margin-top:0;width:auto;padding:7px 10px}
+  #theme-toggle-label{display:none}
+  .nav{order:3;width:100%;flex:none;display:flex;overflow-x:auto;padding:0 6px;border-top:1px solid rgba(255,255,255,.08);scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .nav::-webkit-scrollbar{display:none}
+  .nav-item{flex:none;padding:11px 12px;gap:6px;font-size:11px;letter-spacing:.4px;white-space:nowrap}
+  .nav-item.active::before{left:8px;right:8px;top:auto;bottom:0;width:auto;height:3px}
+  .nav-badge{margin-left:2px}
+  .main{margin-left:0;width:100%;min-width:0}
+  .apikey-banner{padding:12px 16px;padding-right:34px}
+  .apikey-input{min-width:0!important;flex:1 1 100%!important}
+  #apikey-abrir{margin:10px 0 0 16px}
+  .page-head{padding:18px 16px 16px}
+  .page-title{font-size:28px}
+  .page-body{padding:16px}
+  .gerar-layout{grid-template-columns:1fr}
+  .config-card{position:static}
+  .fonte-card{padding:18px}
+  .session-bar,.stats-grid{grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:18px}
+  .session-stat,.stat-tile{padding:14px 16px}
+  .session-stat-num{font-size:30px}
+  .stat-tile-num{font-size:34px}
+  .charts-row{grid-template-columns:1fr}
+  .chart-card,.card[style*="padding:24px"]{padding:16px!important}
+  .toolbar .filter-sel,.toolbar .search-input,.page-body>div>.filter-sel{min-width:0!important;max-width:none!important;width:100%}
+  .q-card{padding:14px 16px}
+  .q-card-head{flex-wrap:wrap}
+  .fc-body{padding:20px 16px}
+  .fc-question{font-size:15px}
+  .alt-btn{padding:12px 12px;gap:10px;font-size:14px}
+  .fc-answer-box{padding:16px}
+  .rating-row{gap:5px}
+  .r-btn{padding:11px 2px;font-size:10.5px;letter-spacing:0}
+  .r-sub{font-size:9.5px}
+  .modal-bg{padding:10px}
+  .modal{padding:20px 16px}
+  .backup-card{padding:18px 16px}
+  .dash-ctl .config-select{min-width:0!important}
+  .dash-listas{grid-template-columns:1fr}
+  table{max-width:100%}
+  input,select,textarea{font-size:16px}  /* abaixo de 16px o iPhone dá zoom ao tocar no campo */
+}

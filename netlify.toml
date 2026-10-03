@@ -1,0 +1,11 @@
+# Site estático: nada a compilar, publica a raiz do repositório.
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# O service worker precisa ser sempre buscado de novo, senão o app instalado
+# no celular ficaria preso numa versão antiga.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

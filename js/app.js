@@ -884,9 +884,70 @@ function updateMateriaDatalist(){
 }
 
 // API KEY
-function loadApiKey(){const k=localStorage.getItem('questia_apikey')||'';if(k){document.getElementById('apikey-input').value=k;document.getElementById('apikey-banner').classList.add('ok');document.getElementById('apikey-hint').textContent='✓ Chave configurada. Clique em Salvar para alterar.';}return k;}
-function saveApiKey(){const v=document.getElementById('apikey-input').value.trim();if(!v.startsWith('sk-ant-')){notify('Chave inválida. Deve começar com sk-ant-','err');return;}localStorage.setItem('questia_apikey',v);document.getElementById('apikey-banner').classList.add('ok');document.getElementById('apikey-hint').textContent='✓ Chave salva! Agora você pode gerar questões.';notify('API Key salva!','ok');}
-function getApiKey(){return localStorage.getItem('questia_apikey')||'';}
+// Dois modos de falar com a IA:
+//  1) CHAVE NO NAVEGADOR (sk-ant-...): chamada direta à Anthropic, como sempre foi.
+//  2) SENHA DO SERVIDOR (qualquer outro texto): o site publicado no Netlify guarda a
+//     chave numa variável de ambiente e a função /api/claude faz a chamada. A chave
+//     nunca chega ao navegador; quem tiver só o link do site, sem a senha, não usa a IA.
+// O mesmo campo aceita as duas coisas — o formato diz qual é.
+function getChaveDireta(){try{return localStorage.getItem('questia_apikey')||'';}catch(e){return'';}}
+function getSenhaServidor(){try{return localStorage.getItem('questia_senha_servidor')||'';}catch(e){return'';}}
+// Continua com o mesmo nome porque o resto do app só pergunta "a IA está configurada?"
+function getApiKey(){return getChaveDireta()||getSenhaServidor();}
+function loadApiKey(){
+  const k=getChaveDireta(),sv=getSenhaServidor(),el=document.getElementById('apikey-input');
+  if(k||sv){
+    el.value=k||sv;
+    document.getElementById('apikey-banner').classList.add('ok');
+    document.getElementById('apikey-hint').textContent=k
+      ?'✓ Chave configurada neste navegador. Clique em Salvar para alterar.'
+      :'✓ Usando a chave guardada no servidor (senha configurada). Clique em Salvar para alterar.';
+  }
+  return k||sv;
+}
+function saveApiKey(){
+  const v=document.getElementById('apikey-input').value.trim();
+  if(!v){
+    try{localStorage.removeItem('questia_apikey');localStorage.removeItem('questia_senha_servidor');}catch(e){}
+    document.getElementById('apikey-banner').classList.remove('ok');
+    document.getElementById('apikey-hint').textContent='Chave removida deste navegador.';
+    notify('Chave removida','ok');return;
+  }
+  try{
+    if(v.startsWith('sk-ant-')){localStorage.setItem('questia_apikey',v);localStorage.removeItem('questia_senha_servidor');}
+    else{
+      if(location.protocol==='file:'){notify('Senha do servidor só funciona no site publicado. Aberto como arquivo, use a chave sk-ant-...','err');return;}
+      localStorage.setItem('questia_senha_servidor',v);localStorage.removeItem('questia_apikey');
+    }
+  }catch(e){notify('Não consegui salvar: '+e.message,'err');return;}
+  document.getElementById('apikey-banner').classList.add('ok');
+  document.getElementById('apikey-hint').textContent=v.startsWith('sk-ant-')
+    ?'✓ Chave salva neste navegador! Agora você pode gerar questões.'
+    :'✓ Senha salva — a IA vai usar a chave guardada no servidor.';
+  notify(v.startsWith('sk-ant-')?'API Key salva!':'Senha do servidor salva!','ok');
+}
+// Única porta de saída para a IA. Recebe o corpo da requisição da Messages API e
+// devolve a Response, igual ao fetch fazia — quem chama não precisa saber o modo.
+async function chamarClaude(corpo){
+  const chave=getChaveDireta();
+  if(chave){
+    return fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':chave,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify(corpo)});
+  }
+  const senha=getSenhaServidor();
+  if(!senha)throw new Error('Configure a chave da Anthropic ou a senha do servidor no topo da tela');
+  const res=await fetch('/api/claude',{method:'POST',
+    headers:{'Content-Type':'application/json','x-questia-senha':senha},
+    body:JSON.stringify(corpo)});
+  // Sem a função publicada, o servidor devolve uma página HTML de 404 — que o
+  // chamador tentaria ler como JSON e mostraria um erro incompreensível.
+  if(res.status===404||!(res.headers.get('content-type')||'').includes('json')){
+    return new Response(JSON.stringify({error:{message:'O servidor deste site não tem a função /api/claude. Ela só existe no site publicado pelo Netlify; aberto de outro jeito, use a chave sk-ant-... no campo do topo.'}}),
+      {status:502,headers:{'Content-Type':'application/json'}});
+  }
+  return res;
+}
 
 // ===== MODELO =====
 // Estava fixo no código. Identificador de modelo é data de validade: quando a versão
@@ -1223,7 +1284,7 @@ ${formato==='certo-errado'?'gabarito=0 para Certo, 1 para Errado.'
  :formato==='misto'?'gabarito: nas de múltipla escolha é o índice 0=A,1=B,2=C,3=D,4=E; nas de certo/errado é 0 para Certo e 1 para Errado.'
  :'gabarito=índice 0=A,1=B,2=C,3=D,4=E.'} Matéria: ${materia}`;
   try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:getModelo(),max_tokens:Math.min(16000, numQuestoes * (formato==='certo-errado'?320:600)),system,messages:[{role:'user',content:prompt}]})});
+    const res=await chamarClaude({model:getModelo(),max_tokens:Math.min(16000, numQuestoes * (formato==='certo-errado'?320:600)),system,messages:[{role:'user',content:prompt}]});
     if(!res.ok){const e=await res.json();throw new Error(e.error?.message||`HTTP ${res.status}`);}
     const data=await res.json();
     const raw=data.content.map(b=>b.text||'').join('');
@@ -3961,13 +4022,10 @@ function praticaParseTexto(txt){
   return JSON.parse(out);
 }
 async function praticaChamarAPI(modelo,prompt){
-  const apiKey=getApiKey();
-  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:modelo,max_tokens:2000,
+  const res=await chamarClaude({model:modelo,max_tokens:2000,
       system:'Você é professor de cursinho para concursos fiscais. Escreve em português do Brasil, claro e concreto. Entregue o resultado chamando a ferramenta registrar_pratica.',
       tools:[PRATICA_TOOL],tool_choice:{type:'tool',name:'registrar_pratica'},
-      messages:[{role:'user',content:prompt}]})});
+      messages:[{role:'user',content:prompt}]});
   if(!res.ok){const e=await res.json().catch(()=>({}));const err=new Error((e.error&&e.error.message)||('HTTP '+res.status));err.status=res.status;throw err;}
   const j=await res.json();
   const uso=(j.content||[]).find(b=>b.type==='tool_use');
