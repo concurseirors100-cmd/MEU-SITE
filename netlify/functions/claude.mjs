@@ -61,7 +61,10 @@ export default async (req) => {
   });
 
   if (resposta.status === 401) {
-    return json(502, 'A Anthropic recusou a chave guardada no Netlify (ANTHROPIC_API_KEY). Confira se ela foi colada inteira, começando com sk-ant-, e se não foi apagada no console da Anthropic.');
+    // Impressão digital sem revelar a chave: tamanho, prefixo e os 4 últimos caracteres
+    // (o console da Anthropic mostra esse mesmo final), para saber qual chave está no ar.
+    const digital = `tem ${chave.length} caracteres, ${chave.startsWith('sk-ant-') ? 'começa com sk-ant-' : 'NÃO começa com sk-ant-'} e termina em "…${chave.slice(-4)}"`;
+    return json(502, `A Anthropic recusou a chave guardada no Netlify (ANTHROPIC_API_KEY). A chave que o servidor está usando ${digital}. Compare com a lista de chaves no console da Anthropic.`);
   }
   return new Response(await resposta.text(), {
     status: resposta.status,
