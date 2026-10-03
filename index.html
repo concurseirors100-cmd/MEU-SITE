@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuestIA — Gerador de Questões Fiscais</title>
+<meta name="description" content="Gerador de questões para concursos fiscais com algoritmo SM-2 de revisão espaçada">
+<meta name="theme-color" content="#1a1714">
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'&gt;&lt;text y='.9em' font-size='90'&gt;%E2%9A%96%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+<link rel="preconnect" href="https://fonts.googleapis.com/"><link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<script>
+// Aplica o tema salvo ANTES do resto da página desenhar, pra não piscar claro->escuro.
+(function(){
+  try{
+    const t=localStorage.getItem('questia_theme');
+    if(t==='dark')document.documentElement.setAttribute('data-theme','dark');
+  }catch(e){}
+})();
+</script>
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">⚖️</div>
+    <div class="logo-title">Quest<em>IA</em></div>
+    <div class="logo-sub">Gerador Fiscal</div>
+  </div>
+  <nav class="nav">
+    <div class="nav-item" onclick="nav('gerar')"><span>✨</span> Gerar Questões</div>
+    <div class="nav-item" onclick="nav('banco')"><span>📚</span> Banco</div>
+    <div class="nav-item active" onclick="nav('estudar')"><span>🎯</span> Estudar <span class="nav-badge" id="due-badge" style="display:none"></span></div>
+    <div class="nav-item" onclick="nav('resumos')"><span>🗒️</span> Resumos</div>
+    <div class="nav-item" onclick="nav('revisao')"><span>🎴</span> Revisão <span class="nav-badge" id="rev-badge" style="display:none"></span></div>
+    <div class="nav-item" onclick="nav('stats')"><span>📊</span> Estatísticas</div>
+    <div class="nav-item" onclick="nav('meta')"><span>🎯</span> Meta</div>
+    <div class="nav-item" onclick="nav('backup')"><span>💾</span> Backup</div>
+    <div class="nav-item" onclick="nav('ranking')"><span>🏆</span> Ranking</div>
+    <div class="nav-item" onclick="nav('dashboard')"><span>🧭</span> Dashboard</div>
+  </nav>
+  <div class="sidebar-bottom">
+    <div class="sidebar-stat"><span class="sidebar-stat-num" id="sb-total">0</span>questões salvas</div>
+    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()" title="Alternar tema claro/escuro">
+      <span id="theme-toggle-icon">🌙</span> <span id="theme-toggle-label">Modo escuro</span>
+    </button>
+  </div>
+</aside>
+
+<main class="main">
+  <button id="apikey-abrir" onclick="toggleApiBar()" title="Mostrar/ocultar a configuração de chave e modelo">⚙ chave e modelo</button>
+  <div class="apikey-banner" id="apikey-banner">
+    <button class="apikey-fechar" onclick="toggleApiBar()" title="Ocultar">✕</button>
+    <span class="apikey-label">🔑 API Key Anthropic</span>
+    <input type="password" class="apikey-input" id="apikey-input" placeholder="sk-ant-api03-..." autocomplete="off">
+    <button class="apikey-save" onclick="saveApiKey()">Salvar</button>
+    <span class="apikey-label" style="margin-left:8px">🤖 Modelo</span>
+    <input class="apikey-input" id="modelo-input" list="modelos-datalist" style="min-width:240px;flex:0 1 280px" placeholder="claude-sonnet-5-5" onchange="salvarModelo()" autocomplete="off">
+    <datalist id="modelos-datalist"><option value="claude-sonnet-5-5"></option><option value="claude-opus-5-5"></option><option value="claude-haiku-4-5-20251001"></option></datalist>
+    <div class="apikey-hint" id="apikey-hint">Cole sua chave da Anthropic (sk-ant-...) para gerar questões.</div>
+    <div class="apikey-hint" style="opacity:.8">O identificador do modelo muda quando a Anthropic aposenta versões — se a geração parar com erro de modelo, troque aqui. Os atuais ficam em <a href="https://docs.claude.com/en/docs/about-claude/models" target="_blank" rel="noopener" style="color:inherit">docs.claude.com</a>.</div>
+  </div>
+
+  <!-- GERAR -->
+  <div class="page" id="page-gerar">
+    <div class="page-head">
+      <div><div class="page-title">Gerar <em>Questões</em></div><div class="page-sub">Cole um texto ou envie um PDF — questões no estilo de banca real com distratores técnicos</div></div>
+    </div>
+    <div class="page-body">
+      <div class="gerar-layout">
+        <div class="card fonte-card">
+          <div class="fonte-tabs">
+            <button class="fonte-tab active" onclick="switchFonte('texto')">📝 Texto / Lei</button>
+            <button class="fonte-tab" onclick="switchFonte('pdf')">📄 PDF</button>
+          </div>
+          <div id="fonte-texto">
+            <label style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;display:block;margin-bottom:8px">Conteúdo-fonte</label>
+            <textarea class="fonte-textarea" id="fonte-txt" placeholder="Cole aqui o artigo de lei, súmula, doutrina ou qualquer conteúdo fiscal..."></textarea>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+              <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace" id="char-count">0 caracteres</span>
+              <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fonte-txt').value='';updateCharCount()">Limpar</button>
+            </div>
+          </div>
+          <div id="fonte-pdf" style="display:none">
+            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('pdf-input').click()">
+              <div style="font-size:40px;margin-bottom:12px">📂</div>
+              <div style="font-size:15px;font-weight:600;margin-bottom:6px">Solte o PDF aqui</div>
+              <div style="font-size:12px;color:var(--muted)">ou clique para selecionar</div>
+            </div>
+            <input type="file" id="pdf-input" accept=".pdf" onchange="loadPDF(event)">
+            <div class="pdf-loaded" id="pdf-loaded">
+              <span style="font-size:24px">📄</span>
+              <div style="flex:1"><div style="font-weight:600;font-size:14px" id="pdf-name">arquivo.pdf</div><div style="font-size:12px;color:var(--muted)" id="pdf-pages">carregando...</div></div>
+              <button class="btn btn-ghost btn-sm" onclick="clearPDF()">✕</button>
+            </div>
+          </div>
+        </div>
+        <div class="card config-card">
+          <div class="config-title">⚙ Configurações</div>
+          <div class="config-group">
+            <label class="config-label">Número de questões</label>
+            <div class="num-stepper"><button class="stepper-btn" onclick="changeNum(-1)">−</button><div class="stepper-val" id="num-val">5</div><button class="stepper-btn" onclick="changeNum(1)">+</button></div>
+          </div>
+          <div class="config-group">
+            <label class="config-label">Estilo de banca</label>
+            <select class="config-select" id="sel-banca" onchange="salvarPrefsGerador()"><option value="FCC">FCC</option><option value="CESPE/CEBRASPE">CESPE / CEBRASPE</option><option value="FGV">FGV</option><option value="VUNESP">VUNESP</option><option value="ESAF">ESAF</option><option value="IADES">IADES</option><option value="IBFC">IBFC</option><option value="INSTITUTO AOCP">Instituto AOCP</option></select>
+          </div>
+          <div class="config-group">
+            <label class="config-label">Formato</label>
+            <select class="config-select" id="sel-formato" onchange="salvarPrefsGerador()">
+              <option value="multipla">Múltipla escolha (A a E)</option>
+              <option value="certo-errado">Certo ou Errado</option>
+              <option value="misto">Misto — os dois formatos</option>
+            </select>
+          </div>
+          <div class="config-group">
+            <label class="config-label">Dificuldade</label>
+            <select class="config-select" id="sel-dific" onchange="salvarPrefsGerador()"><option value="médio">Médio</option><option value="difícil">Difícil</option><option value="muito difícil">Muito difícil</option><option value="misto">Misto</option></select>
+          </div>
+          <div class="config-group">
+            <label class="config-label">Matéria</label>
+            <input type="text" class="config-input" id="inp-materia" list="materias-datalist" placeholder="Ex: Direito Tributário" oninput="document.querySelectorAll('.chip').forEach(c=&gt;c.classList.remove('active'))">
+            <datalist id="materias-datalist"></datalist>
+            <div class="materia-chips" id="materia-chips-wrap"><button class="chip" onclick="setMateria(this,'Direito Tributário')">Tributário</button><button class="chip" onclick="setMateria(this,'Direito Administrativo')">Adm.</button><button class="chip" onclick="setMateria(this,'Contabilidade')">Contabil.</button><button class="chip" onclick="setMateria(this,'Legislação Fiscal')">Leg. Fiscal</button><button class="chip" onclick="setMateria(this,'Auditoria Privada')">Auditoria</button><button class="chip" onclick="addCustomMateria()" style="border-style:dashed">+ Nova matéria</button></div>
+          </div>
+          <div class="config-group">
+            <label class="config-label">Foco</label>
+            <select class="config-select" id="sel-foco" onchange="salvarPrefsGerador()"><option value="literal">Literal</option><option value="interpretativo">Interpretativo</option><option value="aplicação prática">Aplicação prática</option><option value="misto">Misto</option></select>
+          </div>
+          <div class="generate-btn-wrap"><button class="btn btn-accent generate-btn btn-lg" onclick="gerarQuestoes()">✨ Gerar Questões</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BANCO -->
+  <div class="page" id="page-banco">
+    <div class="page-head"><div><div class="page-title">Banco de <em>Questões</em></div><div class="page-sub">Questões geradas e salvas</div></div></div>
+    <div class="page-body">
+      <div class="toolbar">
+        <input class="search-input" type="text" placeholder="🔍  Buscar..." id="srch" oninput="renderBanco()">
+        <select class="filter-sel" id="f-materia" onchange="popularSubtemas();renderBanco()"></select>
+        <select class="filter-sel" id="f-subtema" onchange="renderBanco()" style="max-width:280px"></select>
+        <select class="filter-sel" id="f-banca" onchange="renderBanco()"></select>
+        <select class="filter-sel" id="f-status" onchange="renderBanco()"><option value="">Todas</option><option value="due">🔴 Revisar</option><option value="ok">✓ Em dia</option><option value="leech">🔥 Leeches</option><option value="susp">⏸ Suspensas</option><option value="fav">⭐ Favoritas</option><option value="conflito">⚠️ Gabarito em conflito</option></select>
+        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px" onclick="conferirGabaritos()" title="Compara o gabarito de cada questão com o que o professor escreveu no comentário">🔍 Conferir gabaritos</button>
+        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px" onclick="suspenderSubtemaAtual()" title="Suspende todas as questões do subtema selecionado no filtro acima — sai da fila, continua no banco">⏸ Suspender subtema filtrado</button>
+        <button class="btn btn-outline" style="padding:9px 14px;font-size:13px" onclick="reativarSubtemaAtual()" title="Reativa todas as questões suspensas do subtema selecionado no filtro acima">▶ Reativar subtema filtrado</button>
+      </div>
+      <div id="banco-list"></div>
+    </div>
+  </div>
+
+  <!-- ESTUDAR -->
+  <div class="page active" id="page-estudar">
+    <div class="page-head"><div><div class="page-title">Hora de <em>Estudar</em></div><div class="page-sub">SM-2 — cada resposta calibra o próximo intervalo</div></div></div>
+    <div class="page-body">
+      <div id="aviso-reta" style="display:none"></div>
+      <div style="margin-bottom:16px">
+        <select class="filter-sel" id="f-estudar-materia" onchange="populateEstudarSubtemas();initStudy()" style="min-width:220px"></select>
+        <select class="filter-sel" id="f-estudar-subtema" onchange="initStudy()" style="min-width:240px;max-width:340px"></select>
+      </div>
+      <div class="session-bar">
+        <div class="session-stat"><div class="session-stat-num" id="ss-due" style="color:var(--accent)">0</div><div class="session-stat-label">Para Revisar</div></div>
+        <div class="session-stat"><div class="session-stat-num" id="ss-ok" style="color:var(--green)">0</div><div class="session-stat-label">Acertos</div></div>
+        <div class="session-stat"><div class="session-stat-num" id="ss-err" style="color:var(--accent)">0</div><div class="session-stat-label">Erros</div></div>
+        <div class="session-stat"><div class="session-stat-num" id="ss-pct">—</div><div class="session-stat-label">% Acerto</div></div>
+      </div>
+      <div id="sess-progress" style="max-width:700px;margin:0 auto 18px"></div>
+      <div class="fc-wrap">
+        <div id="no-due" style="display:none" class="empty-state"></div>
+        <div id="fc-area" style="display:none">
+          <div class="fc">
+            <canvas id="fc-pincel"></canvas>
+            <div class="pincel-barra"><button onclick="pincelDesfazer()">↶ desfazer</button><button onclick="pincelLimpar()">limpar</button><button onclick="pincelToggle()">sair do pincel</button></div>
+            <div class="fc-stripe"></div>
+            <div class="fc-body">
+              <div class="fc-num" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span id="fc-meta"></span>
+                <div style="display:flex;gap:4px;flex-shrink:0">
+                  <button id="fc-susp-btn" onclick="suspenderAtual()" title="Suspender — sai da fila, continua no banco. Funciona antes mesmo de responder." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">⏸</button>
+                  <button id="fc-del-btn" onclick="deleteCurrent()" title="Excluir esta questão do banco — funciona antes mesmo de responder." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🗑</button>
+                  <button id="fc-pincel-btn" onclick="pincelToggle()" title="Pincel (tecla P) — rabiscar sobre a questão. O traço some ao passar para a próxima." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">✏️</button>
+                  <button id="fc-calc-btn" class="calc-toggle-btn" onclick="toggleCalculadora()" title="Calculadora — abre um painel à direita, pra bater um índice sem sair do estudo." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🧮</button>
+                  <button id="fc-gabarito-btn" onclick="abrirCorrigirGabarito()" title="O sistema marcou a alternativa errada como correta? Corrija aqui — a mudança fica salva pra sempre nesta questão." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🔑</button>
+                  <button id="fc-fav-btn" onclick="favoritarAtual()" title="Favoritar — leve preferência na fila, sem furar o agendamento do SM-2" style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">☆</button>
+                </div>
+              </div>
+              <div class="fc-question" id="fc-q"></div>
+              <div id="fc-conflito" style="display:none"></div>
+              <div class="alternatives" id="fc-alts"></div>
+              <div id="alt-confirm-wrap" style="display:none;margin-top:14px;text-align:center">
+                <div style="font-size:11px;color:var(--muted);margin-bottom:8px">1 clique marca · 2 cliques descarta (risca) a alternativa</div>
+                <button class="alt-confirm-btn" id="alt-confirm-btn" onclick="confirmarResposta()" disabled="">Selecione uma alternativa</button>
+              </div>
+              <div class="rating-row" id="fc-rate">
+                <button class="r-btn r0" onclick="rate(0)">✗ Errei<div class="r-sub" id="rsub-0">amanhã</div></button>
+                <button class="r-btn r1" onclick="rate(1)">↩ Difícil<div class="r-sub" id="rsub-1">2 dias</div></button>
+                <button class="r-btn r2" onclick="rate(2)">✓ Bom<div class="r-sub" id="rsub-2">4 dias</div></button>
+                <button class="r-btn r3" onclick="rate(3)">⚡ Fácil<div class="r-sub" id="rsub-3">6 dias</div></button>
+                <button class="r-btn r4" onclick="rate(4)" title="Tenho MUITA convicção — manda para bem mais longe que o Fácil, para não gastar dia de pós-edital repetindo o que já está dominado">🎯 Dominada<div class="r-sub" id="rsub-4">16 dias</div></button>
+              </div>
+              <div class="fc-answer-box" id="fc-ans">
+                <div class="answer-label" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+                  <span>✎ Por que está certa</span>
+                  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                    <button class="note-btn" onclick="copiarQuestaoAtual()" title="Copia esta questão (enunciado + comentário) e tenta abrir o Claude Desktop na hora, numa conversa nova só com ela, no formato didático da skill questoes-comentadas">📋 Copiar e abrir agora</button>
+                    <button class="note-btn" onclick="copiaEColaQuestao()" title="Copia só o conteúdo da questão — enunciado, alternativas na ordem original, gabarito e comentário do professor — sem skill e sem instrução, para colar em qualquer IA">📄 Copia e cola</button>
+                    <button class="note-btn" onclick="abrirFundamentacao()" title="Abre o Claude Desktop numa conversa NOVA já com a skill /fundamentacao-conceitual e esta questão — para entender o conceito por trás, não decorar. O modelo você escolhe no seletor antes de enviar (o link não consegue definir isso).">🧠 Fundamentar conceito</button>
+                    <button class="note-btn" onclick="gerarPratica(false)" title="Comentários práticos sobre o assunto desta questão, gerados pela IA dentro da plataforma (cenário real, passo a passo, como a banca distorce, teste rápido). Fica salvo na questão — só gasta crédito na primeira vez.">💡 Na prática</button>
+                    <button class="note-btn" onclick="abrirAnotacao()" title="Anotar um resumo breve desta questão">📝 Anotar</button>
+                  </div>
+                </div>
+                <div id="fc-pratica" style="display:none"></div>
+                <div class="answer-text" id="fc-ans-gabarito"></div>
+              </div>
+              <div id="fc-delete-wrap" style="display:none;margin-top:12px;text-align:center">
+                <button onclick="suspenderAtual()" style="background: none; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; cursor: pointer; font-size: 12px; color: var(--muted); font-family: Outfit, sans-serif; padding: 6px 14px; border-radius: 8px; transition: 0.15s; text-decoration: underline; text-underline-offset: 3px;" onmouseover="this.style.color='var(--accent2)'" onmouseout="this.style.color='var(--muted)'">
+                  ⏸ Suspender (sai da fila, continua no banco)
+                </button>
+                <button onclick="deleteCurrent()" style="background:none;border:none;cursor:pointer;font-size:12px;color:var(--muted);font-family:'Outfit',sans-serif;padding:6px 14px;border-radius:8px;transition:all .15s;text-decoration:underline;text-underline-offset:3px" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">
+                  🗑 Excluir (mal formulada)
+                </button>
+              </div>
+              <div style="margin-top:14px;text-align:center;font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;letter-spacing:.3px">
+                <kbd style="background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:1px 5px">1</kbd>–<kbd style="background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:1px 5px">5</kbd> alternativa · depois <kbd style="background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:1px 5px">1</kbd>–<kbd style="background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:1px 5px">4</kbd> nota · <kbd style="background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:1px 5px">espaço</kbd> = Bom
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- REVISÃO -->
+  <div class="page" id="page-revisao">
+    <div class="page-head">
+      <div><div class="page-title">Revisão <em>rápida</em></div>
+      <div class="page-sub">Cards curtos tirados dos seus resumos e das questões que você mais erra. Meta pequena, todo dia — sem fila de atrasados.</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline btn-sm" id="rev-refinar-btn" onclick="refinarLoteIA()" title="Reescreve com IA todos os cards ainda não refinados">✨ Refinar com IA</button>
+        <button class="btn btn-primary btn-sm" id="rev-gerar-btn" onclick="criarCards()">✨ Criar cards</button>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="card" style="margin-bottom:18px">
+        <div style="display:flex;align-items:center;gap:22px;flex-wrap:wrap">
+          <div style="min-width:150px">
+            <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Hoje</div>
+            <div style="font-size:26px;font-weight:700;color:var(--ink)"><span id="rev-meta-feitos">0</span><span style="font-size:16px;color:var(--muted);font-weight:500"> / <span id="rev-meta-alvo">15</span></span></div>
+            <div style="height:6px;background:var(--surface2);border-radius:3px;margin-top:8px;overflow:hidden"><div id="rev-barra" style="height:100%;width:0%;background:var(--green);border-radius:3px;transition:width .3s"></div></div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Sequência</div>
+            <div style="font-size:26px;font-weight:700;color:var(--ink)">🔥 <span id="rev-streak">0</span></div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Últimos 7 dias</div>
+            <div id="rev-semana" style="display:flex;gap:5px"></div>
+          </div>
+          <div style="margin-left:auto;font-size:12px;color:var(--muted);text-align:right">
+            <span id="rev-total">0</span> cards no baralho
+          </div>
+        </div>
+      </div>
+      <div id="rev-card"></div>
+      <div class="card" style="margin-top:18px">
+        <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:10px">Ajustes</div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:flex-end">
+          <label style="font-size:12px;color:var(--ink2)">Cards por dia<br>
+            <input type="number" id="rev-meta-input" min="1" max="60" style="width:80px;margin-top:5px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--ink)"></label>
+          <label style="font-size:12px;color:var(--ink2)">Virar card a partir de quantos erros<br>
+            <input type="number" id="rev-erros-input" min="2" max="15" style="width:80px;margin-top:5px;padding:7px 9px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;color:var(--ink)"></label>
+          <button class="btn btn-outline btn-sm" onclick="salvarMetaRev()">Salvar</button>
+          <div style="font-size:12px;color:var(--muted);max-width:420px;line-height:1.6">O dia nunca passa da meta. Se você ficar uma semana sem abrir, ao voltar continuam sendo a mesma quantidade — os mais urgentes primeiro.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="page" id="page-stats">
+    <div class="page-head"><div><div class="page-title">Suas <em>Estatísticas</em></div><div class="page-sub">Performance acumulada</div></div></div>
+    <div class="page-body">
+      <div class="stats-grid">
+        <div class="stat-tile"><div class="stat-tile-num" id="st-total">0</div><div class="stat-tile-label">No Banco</div></div>
+        <div class="stat-tile"><div class="stat-tile-num num-green" id="st-ac">0</div><div class="stat-tile-label">Acertos</div></div>
+        <div class="stat-tile"><div class="stat-tile-num num-red" id="st-er">0</div><div class="stat-tile-label">Erros (só "Errei")</div></div>
+        <div class="stat-tile"><div class="stat-tile-num num-blue" id="st-pct">—</div><div class="stat-tile-label">% Acerto</div></div>
+      </div>
+      <!-- COMO O DIA SE DISTRIBUIU -->
+      <div class="card" style="padding:24px;margin-bottom:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+          <div class="card-title" style="margin:0">🔀 Como as matérias se alternaram</div>
+          <button class="btn btn-outline btn-sm" onclick="renderMistura()">Recalcular</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:14px">
+          Lê as suas últimas respostas de verdade (não uma simulação) e mede se o dia veio misturado
+          ou em blocos de uma matéria só.
+        </div>
+        <div id="mistura-corpo" style="font-size:13px;color:var(--ink2)">—</div>
+      </div>
+      <!-- ONDE VOCÊ MAIS ERRA -->
+      <div class="card" style="padding:24px;margin-bottom:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:6px">
+          <div class="chart-title" style="margin:0">🎯 Onde você mais erra</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Mínimo de respostas</label>
+            <select class="filter-sel" id="sub-min" onchange="renderSubtemas()" style="padding:5px 10px;font-size:12px">
+              <option value="1">1</option><option value="3" selected="">3</option><option value="5">5</option><option value="10">10</option>
+            </select>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:18px">Ordenado do pior para o melhor. Clique em <strong>Estudar</strong> para uma sessão só daquele conceito.</div>
+        <div id="sub-chart"></div>
+      </div>
+
+      <!-- GRÁFICO DE ATIVIDADE POR DATA -->
+      <div class="card" style="padding:24px;margin-bottom:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px">
+          <div class="chart-title" style="margin:0">📅 Atividade por dia</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:6px">
+              <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">De</label>
+              <input type="date" id="hist-from" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Outfit',sans-serif;font-size:12px;color:var(--ink);outline:none;cursor:pointer" onchange="renderHistChart()">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <label style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px">Até</label>
+              <input type="date" id="hist-to" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Outfit',sans-serif;font-size:12px;color:var(--ink);outline:none;cursor:pointer" onchange="renderHistChart()">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <button onclick="setHistPeriod(7)" class="btn btn-ghost btn-sm">7d</button>
+              <button onclick="setHistPeriod(30)" class="btn btn-ghost btn-sm">30d</button>
+              <button onclick="setHistPeriod(90)" class="btn btn-ghost btn-sm">90d</button>
+            </div>
+          </div>
+        </div>
+        <!-- Legenda -->
+        <div style="display:flex;gap:16px;margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)"><div style="width:12px;height:12px;border-radius:3px;background:var(--green)"></div>Acertos</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)"><div style="width:12px;height:12px;border-radius:3px;background:var(--accent)"></div>Erros</div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink2)"><div style="width:12px;height:12px;border-radius:3px;background:var(--accent2);opacity:.4"></div>Total</div>
+        </div>
+        <!-- Resumo do período -->
+        <div id="hist-summary" style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap"></div>
+        <!-- Gráfico -->
+        <div style="position:relative;overflow-x:auto">
+          <div id="hist-chart" style="display:flex;gap:4px;align-items:flex-end;min-height:140px;padding-bottom:24px;padding-top:8px;min-width:100%"></div>
+        </div>
+      </div>
+
+      <!-- CRONÔMETRO: TEMPO ESTUDADO -->
+      <div class="card" style="padding:24px;margin-bottom:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+          <div class="chart-title" style="margin:0">⏱️ Tempo estudado</div>
+          <select id="hist-time-materia" onchange="renderHistChart()" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:7px 12px;font-family:'Outfit',sans-serif;font-size:12px;color:var(--ink);outline:none;cursor:pointer"></select>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">Mesmo período do gráfico acima. Cada questão conta no máximo 3 minutos — passou disso, provavelmente você estava com o site em segundo plano.</div>
+        <div id="hist-time-summary" style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap"></div>
+        <div style="position:relative;overflow-x:auto">
+          <div id="hist-time-chart" style="display:flex;gap:4px;align-items:flex-end;min-height:140px;padding-bottom:24px;padding-top:8px;min-width:100%"></div>
+        </div>
+        <div id="hist-time-mat-wrap" style="display:none">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:18px 0 10px">Tempo por matéria (no período)</div>
+          <div class="mat-rows" id="hist-time-mat"></div>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="card chart-card"><div class="chart-title">📊 Acerto por matéria</div><div class="mat-rows" id="mat-chart"></div></div>
+        <div class="card chart-card" style="grid-column:1 / -1"><div class="chart-title">🧮 Quantidade de questões por matéria</div><div style="font-size:12px;color:var(--muted);margin-bottom:14px">Todas as matérias, da que tem menos questões para a que tem mais — assim fica fácil ver onde alimentar o banco.</div><div class="mat-rows" id="mat-count-chart"></div></div>
+        <div class="card chart-card"><div class="chart-title">🏛 Questões por banca</div><div class="bar-chart" id="banca-chart"></div></div>
+      </div>
+      <div class="card" style="padding:24px">
+        <div class="chart-title">⚙️ Agendamento das revisões</div>
+        <div style="font-size:13px;color:var(--ink2);line-height:1.7;margin-bottom:20px">As fórmulas são as do <strong>Anki</strong>. O controle abaixo é o <em>interval modifier</em> — o mesmo parâmetro que existe nas opções de baralho do Anki. Em 100% você tem o Anki puro; acima disso, os intervalos esticam na mesma proporção.</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px" id="sched-presets"></div>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end;margin-bottom:22px">
+          <div>
+            <label class="config-label">Espaçamento <span id="im-val" style="font-family:'JetBrains Mono',monospace;color:var(--accent)">120%</span></label>
+            <input type="range" id="sched-im" min="80" max="200" step="5" value="120" oninput="onSchedInput()" style="width:260px;accent-color:var(--accent)">
+          </div>
+          <div>
+            <label class="config-label">Intervalo máximo (dias)</label>
+            <input type="number" class="config-input" id="sched-teto" min="7" max="3650" step="1" value="365" oninput="onSchedInput()" style="width:130px">
+          </div>
+          <div>
+            <label class="config-label">Revisões por dia <span style="color:var(--muted);font-weight:400;text-transform:none">(0 = sem limite)</span></label>
+            <input type="number" class="config-input" id="sched-limite" min="0" max="999" step="5" value="60" oninput="onSchedInput()" style="width:130px">
+          </div>
+          <div>
+            <label class="config-label">% do dia para questões novas de banca</label>
+            <input type="number" class="config-input" id="sched-cota" min="0" max="100" step="5" value="40" oninput="onSchedInput()" style="width:130px">
+            <div style="font-size:11px;color:var(--muted);margin-top:5px;line-height:1.5">Fatia do limite diário reservada a questões de banca que você ainda não respondeu aqui. O resto vai para as revisões atrasadas.</div>
+          </div>
+          <div>
+            <label class="config-label">Erros para marcar leech</label>
+            <input type="number" class="config-input" id="sched-leech" min="2" max="30" step="1" value="5" oninput="onSchedInput()" style="width:130px">
+          </div>
+          <div>
+            <label class="config-label">Data da prova</label>
+            <input type="date" class="config-input" id="sched-prova" oninput="onProvaInput()" style="width:160px">
+          </div>
+          <div>
+            <label class="config-label">Teto da reta final vale para</label>
+            <select class="config-select" id="reta-escopo" onchange="onRetaInput()" style="width:230px">
+              <option value="tec">Só questões de banca importadas</option>
+              <option value="todas">Todas as questões</option>
+              <option value="nenhuma">Nenhuma — desligar o teto</option>
+            </select>
+          </div>
+          <div>
+            <label class="config-label">Agressividade <span id="reta-frac-val" style="font-family:'JetBrains Mono',monospace;color:var(--accent)">40%</span></label>
+            <input type="range" id="reta-frac" min="20" max="100" step="5" value="40" oninput="onRetaInput()" style="width:200px;accent-color:var(--accent)">
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="resetSched()">↺ Voltar ao padrão</button>
+        </div>
+        <div id="reta-info" style="margin-bottom:22px"></div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">Prévia — dias até a próxima revisão (facilidade 2,50)</div>
+        <div style="overflow-x:auto"><table id="sched-preview" style="border-collapse:collapse;font-size:13px;min-width:420px;width:100%"></table></div>
+        <div id="sched-aviso" style="font-size:12px;margin-top:10px;line-height:1.6"></div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+          <span style="color:var(--accent)">✗ Errei</span> encurta o intervalo · <span style="color:var(--yellow)">↩ Difícil</span> avança devagar (×1,20) · <span style="color:var(--accent2)">✓ Bom</span> multiplica pela facilidade · <span style="color:var(--green)">⚡ Fácil</span> ganha bônus ×1,30 · <span style="color:var(--susp-ink)">🎯 Dominada</span> ganha ×2,10, para o que você tem muita convicção. Nenhum acerto encurta o intervalo, e cada botão mostra a data real antes de você clicar. As datas recebem ±5% de variação aleatória (fuzz) para as revisões não se acumularem todas no mesmo dia.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- META -->
+  <div class="page" id="page-meta">
+    <div class="page-head">
+      <div><div class="page-title">Sua <em>Meta</em></div><div class="page-sub">Onde você está em relação à nota que quer tirar — ISS Manaus AFTM, 01/11/2026</div></div>
+      <div style="display:flex;align-items:flex-end;gap:10px">
+        <div>
+          <label class="config-label">Meta (%)</label>
+          <input type="number" class="config-input" id="meta-alvo" min="30" max="100" step="1" value="80" oninput="onMetaInput()" style="width:100px">
+        </div>
+      </div>
+    </div>
+    <div class="page-body"><div id="meta-body"></div></div>
+  </div>
+
+  <!-- RESUMOS -->
+  <div class="page" id="page-resumos">
+    <div class="page-head"><div><div class="page-title">Meus <em>Resumos</em></div><div class="page-sub">Anotações rápidas que você tirou durante o estudo, organizadas automaticamente por matéria e subtema (<span id="resumo-total">0</span> ao todo)</div></div>
+      <button class="btn btn-outline btn-sm" onclick="exportResumos()">⬇ Exportar em Markdown</button>
+    </div>
+    <div class="page-body">
+      <div class="resumo-toolbar">
+        <select class="filter-sel" id="f-resumo-materia" onchange="renderResumos()"></select>
+        <input type="text" class="config-input" id="f-resumo-busca" placeholder="Buscar nas anotações…" style="max-width:280px" oninput="renderResumos()">
+      </div>
+      <div id="resumos-list"></div>
+    </div>
+  </div>
+
+  <!-- RANKING -->
+  <div class="page" id="page-ranking">
+    <div class="page-head">
+      <div><div class="page-title">Meu <em>Ranking</em></div><div class="page-sub">Ranking exportado do TecConcursos, com a sua posição estimada pelos últimos 7 dias</div></div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn btn-outline btn-sm" onclick="document.getElementById('rk-file').click()">📥 Importar export do TEC (.json)</button>
+        <input type="file" id="rk-file" accept=".json" style="display:none" onchange="rkImportar(event)">
+      </div>
+    </div>
+    <div class="page-body"><div id="rk-corpo"></div></div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="page" id="page-dashboard">
+    <div class="page-head">
+      <div><div class="page-title">Meu <em>Dashboard</em></div>
+      <div class="page-sub">Por disciplina do edital e por assunto: o que você já resolveu, quanto acerta, se está melhorando e quanto da banca ainda falta ver</div></div>
+      <div class="dash-ctl">
+        <div><label class="config-label">Questões</label>
+          <select class="config-select" id="dash-origem" onchange="dashSet('origem',this.value)" style="min-width:190px">
+            <option value="todas">Todas (banca + IA)</option>
+            <option value="banca">Só questões de banca</option>
+            <option value="ia">Só geradas por IA</option>
+          </select></div>
+        <div><label class="config-label">Curva mede</label>
+          <select class="config-select" id="dash-crit" onchange="dashSet('crit',this.value)">
+            <option value="nota">Nota (igual às Estatísticas)</option>
+            <option value="clique">Alternativa que você clicou</option>
+          </select></div>
+        <div><label class="config-label">Respostas na curva</label>
+          <select class="config-select" id="dash-escopo" onchange="dashSet('escopo',this.value)">
+            <option value="todas">Todas (inclui revisões)</option>
+            <option value="primeira">Só a 1ª vez de cada questão</option>
+          </select></div>
+        <div><label class="config-label">Ordenar assuntos</label>
+          <select class="config-select" id="dash-ord" onchange="dashSet('ord',this.value)">
+            <option value="faltam">Mais banca por ver</option>
+            <option value="acerto">Menor acerto</option>
+            <option value="resp">Mais resolvidas</option>
+            <option value="queda">Maior queda</option>
+            <option value="alfa">A–Z</option>
+          </select></div>
+        <div><label class="config-label">Mín. respostas p/ curva</label>
+          <select class="config-select" id="dash-min" onchange="dashSet('min',+this.value)" style="min-width:90px">
+            <option value="6">6</option><option value="8">8</option><option value="12">12</option><option value="20">20</option>
+          </select></div>
+        <label class="dash-chk"><input type="checkbox" id="dash-incsusp" onchange="dashSet('incSusp',this.checked)"> contar suspensas em "faltam"</label>
+        <button class="btn btn-outline btn-sm" onclick="dashAbrirTodas(true)">Expandir tudo</button>
+        <button class="btn btn-ghost btn-sm" onclick="dashAbrirTodas(false)">Recolher</button>
+      </div>
+    </div>
+    <div class="page-body"><div id="dash-corpo"></div></div>
+  </div>
+
+  <!-- BACKUP -->
+  <div class="page" id="page-backup">
+    <div class="page-head"><div><div class="page-title">Backup &amp; <em>Importação</em></div><div class="page-sub">Exporte seu banco para não perder nada — importe em qualquer dispositivo</div></div></div>
+    <div class="page-body">
+
+      <div class="card backup-card">
+        <div class="backup-title">📤 Exportar banco de questões</div>
+        <div class="backup-sub">Salva um arquivo <strong>.json</strong> com todas as questões, histórico de acertos/erros e dados do SM-2. Use para backup ou transferir para outro computador.</div>
+        <div class="backup-actions">
+          <button class="btn btn-primary" onclick="exportarBanco()">⬇️ Baixar backup (.json)</button>
+        </div>
+        <div class="backup-info">
+          <div class="backup-stat">Questões: <strong id="bi-total">0</strong></div>
+          <div class="backup-stat">Respondidas: <strong id="bi-respondidas">0</strong></div>
+          <div class="backup-stat">Acertos: <strong id="bi-acertos">0</strong></div>
+          <div class="backup-stat">Erros: <strong id="bi-erros">0</strong></div>
+          <div class="backup-stat">Último export: <strong id="bi-ultimo">nunca</strong></div>
+        </div>
+      </div>
+
+      <div class="card backup-card">
+        <div class="backup-title">📥 Importar banco de questões</div>
+        <div class="backup-sub">Carregue um arquivo <strong>.json</strong> exportado pelo QuestIA. Você pode mesclar com o banco atual ou substituí-lo.</div>
+        <div class="backup-actions">
+          <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">📂 Selecionar arquivo .json</button>
+          <input type="file" id="import-file" accept=".json" onchange="iniciarImport(event)">
+        </div>
+        <div style="margin-top:16px;padding:20px;border:2px dashed var(--border2);border-radius:var(--radius);text-align:center;color:var(--muted);font-size:13px" ondragover="event.preventDefault();this.style.borderColor='var(--accent)'" ondragleave="this.style.borderColor='var(--border2)'" ondrop="event.preventDefault();this.style.borderColor='var(--border2)';handleImportDrop(event)">
+          ou arraste o arquivo .json aqui
+        </div>
+      </div>
+
+      <div class="card backup-card" style="border-color:rgba(22,163,74,.3)">
+        <div class="backup-title">📥 Importar questões do TecConcursos</div>
+        <div class="backup-sub">Carregue um ou mais arquivos do coletor — <strong>.docx</strong>, <strong>.md</strong> ou <strong>.txt</strong>, o app reconhece o formato sozinho. Vêm enunciado, alternativas, gabarito, <strong>comentário do professor</strong> e a árvore matéria → assunto do próprio site. O QID vira o id da questão, então reimportar o mesmo caderno não duplica nada.</div>
+        <div class="backup-actions">
+          <button class="btn btn-primary" onclick="escolherTec()">📥 Selecionar arquivos</button>
+          <input type="file" id="tec-file" accept=".md,.txt,.markdown,.text,.docx" multiple="" style="display:none" onchange="carregarTec(event)">
+        </div>
+      </div>
+
+      <div class="card backup-card" style="border-color:rgba(37,99,235,.25)">
+        <div class="backup-title">🏷️ Aplicar taxonomia de subtemas</div>
+        <div class="backup-sub">Carrega um arquivo <strong>.json</strong> de taxonomia e reescreve apenas <strong>subtema</strong>, <strong>origem</strong> e <strong>matéria</strong>, casando por id de questão. Agendamento, acertos, erros e facilidade do SM-2 ficam intactos. A procedência longa é preservada em <strong>origem</strong>.</div>
+        <div class="backup-actions">
+          <button class="btn btn-outline" onclick="escolherTaxonomia()">🏷️ Selecionar taxonomia (.json)</button>
+          <input type="file" id="tax-file" accept=".json" style="display:none" onchange="carregarTaxonomia(event)">
+        </div>
+        <div id="tax-info" class="backup-info"></div>
+      </div>
+
+      <div class="card backup-card" style="border-color:rgba(217,119,6,.35)">
+        <div class="backup-title">🧮 Consertar tabelas achatadas</div>
+        <div class="backup-sub">Questões importadas antes da v2.4.0 do coletor perderam a estrutura das tabelas (balanço patrimonial, DRE, quadros): as células viraram texto corrido e as <strong>células vazias sumiram</strong>. Não dá para reconstruir a partir do que está no banco — o dado que dizia onde ficava o buraco não foi gravado. O conserto é buscar o enunciado de novo no TEC.
+        <br><br><strong>Passo 1</strong> — baixe aqui a lista das questões afetadas. <strong>Passo 2</strong> — no TEC, com o userscript “Corrigir tabelas”, carregue essa lista e deixe ele extrair. <strong>Passo 3</strong> — volte aqui e aplique o arquivo que ele baixou. A aplicação troca <strong>somente o enunciado</strong>: comentário, gabarito, matéria, subtema, agendamento, acertos e erros não são tocados.</div>
+        <div class="backup-actions">
+          <button class="btn btn-outline" onclick="exportarListaTabelas()">1️⃣ Baixar lista de afetadas</button>
+          <button class="btn btn-primary" onclick="document.getElementById('tab-file').click()">3️⃣ Aplicar correção (.json)</button>
+          <input type="file" id="tab-file" accept=".json" style="display:none" onchange="carregarCorrecaoTabelas(event)">
+        </div>
+        <div id="tab-info" class="backup-info"></div>
+      </div>
+
+      <div class="card backup-card" style="border-color:rgba(37,99,235,.35)">
+        <div class="backup-title">💡 "Na prática" em lote</div>
+        <div class="backup-sub">Gera o "Na prática" fora do site, em blocos, sem gastar créditos da API. <strong>Passo 1</strong> — clique em Exportar próximo lote (vêm as próximas da sua fila sem "Na prática"). <strong>Passo 2</strong> — mande o arquivo para o Claude (ou outra IA) gerar. <strong>Passo 3</strong> — importe aqui a resposta. Não precisa controlar números: cada lote exportado fica "aguardando retorno" e a próxima exportação já pula as questões dele — dá para mandar um lote para cada IA ao mesmo tempo. Cada questão é conferida pelo número <strong>e</strong> por uma impressão digital do texto: se a questão mudou desde a exportação, ela é recusada em vez de receber o comentário errado.</div>
+        <div class="backup-actions" style="align-items:center">
+          <label style="font-size:12px;color:var(--ink2)">Quantas questões: <input type="number" id="lotepr-n" value="50" min="1" max="300" style="width:70px" class="config-input"></label>
+          <button class="btn btn-outline" onclick="exportarLotePratica()">📤 Exportar próximo lote</button>
+          <button class="btn btn-primary" onclick="document.getElementById('lotepr-file').click()">📥 Importar "Na prática" (.json)</button>
+          <input type="file" id="lotepr-file" accept=".json,.txt" style="display:none" onchange="importarLotePratica(event)">
+          <button class="btn btn-outline" onclick="abrirColarPratica()">📋 Colar resposta da IA</button>
+          <label style="font-size:12px;color:var(--muted)"><input type="checkbox" id="lotepr-sobre"> sobrescrever os que já têm</label>
+        </div>
+        <div id="lotepr-status"></div>
+        <div id="lotepr-info" class="backup-info"></div>
+      </div>
+
+      <div class="card backup-card">
+        <div class="backup-title">💽 Armazenamento</div>
+        <div class="backup-sub">O banco agora vive no <strong>IndexedDB</strong>, sem o teto de ~5 MB do localStorage. Cada questão é um registro próprio, então responder uma questão grava só ela.</div>
+        <div id="espaco-info"></div>
+      </div>
+
+      <div class="card backup-card" style="border-color:rgba(22,163,74,.25)">
+        <div class="backup-title">🛟 Snapshots automáticos</div>
+        <div class="backup-sub">O app guarda sozinho uma cópia do banco por dia de uso (as 7 mais recentes), dentro do próprio navegador. É a rede de segurança para quando você esquecer de exportar. <strong>Não substitui o backup .json</strong> — limpar os dados do navegador apaga os snapshots junto.</div>
+        <div id="snap-list"></div>
+      </div>
+
+      <div class="card backup-card" style="border-color:rgba(192,57,43,.2)">
+        <div class="backup-title" style="color:var(--accent)">⚠️ Zona de perigo</div>
+        <div class="backup-sub">Apaga permanentemente todo o banco. <strong>Não há como desfazer.</strong> Faça backup antes.</div>
+        <div class="backup-actions"><button class="btn btn-danger" onclick="limparTudo()">🗑️ Apagar tudo</button></div>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- MODAL QUESTÕES GERADAS -->
+<div class="modal-bg" id="result-modal">
+  <div class="modal">
+    <div class="modal-head"><div><div class="modal-title">Questões Geradas</div><div style="font-size:13px;color:var(--muted);margin-top:4px">Revise e selecione quais salvar</div></div><button class="modal-close" onclick="closeResultModal()">×</button></div>
+    <div class="gen-q-list" id="gen-q-list"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn btn-outline" onclick="selectAll()">Selecionar todas</button>
+      <div style="display:flex;gap:10px"><button class="btn btn-ghost" onclick="closeResultModal()">Cancelar</button><button class="btn btn-primary" onclick="saveSelected()">💾 Salvar Selecionadas</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL IMPORT TEC -->
+<div class="modal-bg" id="tec-modal">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-head">
+      <div><div class="modal-title">Importar do TecConcursos</div><div style="font-size:13px;color:var(--muted);margin-top:4px">Confira antes de aplicar</div></div>
+      <button class="modal-close" onclick="document.getElementById('tec-modal').classList.remove('open');pendingTec=null">×</button>
+    </div>
+    <div class="import-preview" id="tec-preview"></div>
+    <div id="tec-detalhe" style="margin-top:4px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-ghost" onclick="document.getElementById('tec-modal').classList.remove('open');pendingTec=null">Cancelar</button>
+      <button class="btn btn-primary" id="tec-btn-confirmar" onclick="confirmarImportTec()">Importar</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px;text-align:right">As questões entram com agendamento zerado, para revisão a partir de hoje.</div>
+  </div>
+</div>
+
+<!-- MODAL ANOTAR PARA O RESUMO -->
+<div class="modal-bg" id="colarpr-modal">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-head">
+      <div><div class="modal-title">Colar a resposta da IA</div><div class="anot-meta">Cole o JSON que o ChatGPT/Claude devolveu — pode vir com ```json e texto em volta. Cada item é conferido pelo número e pela impressão digital antes de gravar.</div></div>
+      <button class="modal-close" onclick="fecharColarPratica()">×</button>
+    </div>
+    <textarea class="anot-textarea" id="colarpr-txt" rows="16" style="font-family:'JetBrains Mono',monospace;font-size:11.5px" placeholder='{"itens":[{"id":...,"impressao":"...","pratico":{...}}]}'></textarea>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
+      <button class="btn btn-ghost" onclick="fecharColarPratica()">Cancelar</button>
+      <button class="btn btn-primary" onclick="importarColadoPratica()">Importar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="anotacao-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <div><div class="modal-title">Anotar para o resumo</div><div class="anot-meta" id="anot-meta"></div></div>
+      <button class="modal-close" onclick="fecharAnotacao()">×</button>
+    </div>
+    <div class="anot-field-label">Sua anotação</div>
+    <textarea class="anot-textarea" id="anot-nota" rows="6" placeholder="Escreva aqui o que você quiser guardar sobre esta questão…"></textarea>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
+      <button class="btn btn-ghost" onclick="fecharAnotacao()">Cancelar</button>
+      <button class="btn btn-primary" onclick="enviarAnotacao()">Enviar para o resumo</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CORRIGIR GABARITO DESTA QUESTÃO -->
+<div class="modal-bg" id="gabarito-modal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-head">
+      <div><div class="modal-title">Corrigir gabarito</div><div class="anot-meta" id="gabmod-meta">Questão</div></div>
+      <button class="modal-close" onclick="fecharCorrigirGabarito()">×</button>
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">Toque na alternativa que é a correta de verdade. Isso troca o gabarito guardado desta questão — o SM-2 e as próximas revisões passam a usar essa marcação, mesmo que o comentário do professor sugira outra.</div>
+    <div id="gabmod-lista" style="display:flex;flex-direction:column;gap:8px;max-height:50vh;overflow-y:auto"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
+      <button class="btn btn-ghost" onclick="fecharCorrigirGabarito()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFERIR GABARITOS -->
+<div class="modal-bg" id="conf-modal">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-head">
+      <div><div class="modal-title">Conferir gabaritos</div><div style="font-size:13px;color:var(--muted);margin-top:4px">O gabarito guardado contra o comentário do professor</div></div>
+      <button class="modal-close" onclick="document.getElementById('conf-modal').classList.remove('open')">×</button>
+    </div>
+    <div id="conf-corpo" style="max-height:60vh;overflow:auto"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
+      <button class="btn btn-ghost" onclick="document.getElementById('conf-modal').classList.remove('open')">Fechar</button>
+      <button class="btn btn-primary" id="conf-aplicar" onclick="aplicarConferencia()" style="display:none">Corrigir marcadas</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL IMPORT -->
+<div class="modal-bg" id="import-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head"><div><div class="modal-title">Confirmar Importação</div></div><button class="modal-close" onclick="document.getElementById('import-modal').classList.remove('open')">×</button></div>
+    <div class="import-warning" id="import-warning"></div>
+    <div class="import-preview" id="import-preview"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">
+      <button class="btn btn-outline" onclick="confirmarImport('mesclar')">🔀 Mesclar com atual</button>
+      <button class="btn btn-danger" onclick="confirmarImport('substituir')">⚠️ Substituir tudo</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:10px;text-align:right">Mesclar mantém suas questões e adiciona as do arquivo. Substituir apaga tudo.</div>
+  </div>
+</div>
+
+<div class="loading-overlay" id="loading"><div class="loading-spinner"></div><div class="loading-text" id="loading-text"></div><div class="loading-sub" id="loading-sub"></div></div>
+<div class="notif" id="notif"></div>
+
+<script src="js/app.js"></script>
+
+
+<div class="calc-panel" id="calc-panel">
+  <div class="calc-head">
+    <span class="calc-head-title">🧮 Calculadora</span>
+    <button class="calc-close" onclick="toggleCalculadora()" title="Fechar">✕</button>
+  </div>
+  <div class="calc-expr" id="calc-expr">&nbsp;</div>
+  <div class="calc-display" id="calc-display">0</div>
+  <div class="calc-grid">
+    <button class="calc-btn fn" onclick="calcClear()">C</button>
+    <button class="calc-btn fn" onclick="calcBackspace()">⌫</button>
+    <button class="calc-btn fn" onclick="calcPress('%')">%</button>
+    <button class="calc-btn op" onclick="calcPress('÷')">÷</button>
+    <button class="calc-btn" onclick="calcPress('7')">7</button>
+    <button class="calc-btn" onclick="calcPress('8')">8</button>
+    <button class="calc-btn" onclick="calcPress('9')">9</button>
+    <button class="calc-btn op" onclick="calcPress('×')">×</button>
+    <button class="calc-btn" onclick="calcPress('4')">4</button>
+    <button class="calc-btn" onclick="calcPress('5')">5</button>
+    <button class="calc-btn" onclick="calcPress('6')">6</button>
+    <button class="calc-btn op" onclick="calcPress('-')">−</button>
+    <button class="calc-btn" onclick="calcPress('1')">1</button>
+    <button class="calc-btn" onclick="calcPress('2')">2</button>
+    <button class="calc-btn" onclick="calcPress('3')">3</button>
+    <button class="calc-btn op" onclick="calcPress('+')">+</button>
+    <button class="calc-btn fn" onclick="calcPress('√(')">√</button>
+    <button class="calc-btn" onclick="calcPress('0')">0</button>
+    <button class="calc-btn" onclick="calcPress('.')">.</button>
+    <button class="calc-btn eq" onclick="calcEquals()">=</button>
+    <button class="calc-btn fn" onclick="calcPress('(')">(</button>
+    <button class="calc-btn fn" onclick="calcPress(')')">)</button>
+    <button class="calc-btn fn" onclick="calcPress('^')">xʸ</button>
+    <button class="calc-btn fn" onclick="calcPress('π')">π</button>
+  </div>
+</div>
+<script src="js/calculadora-revisao.js"></script>
+<script src="js/dashboard.js"></script>
+
+<script src="js/formulas.js"></script>
+</body></html>
