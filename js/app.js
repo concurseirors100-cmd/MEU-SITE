@@ -2679,7 +2679,7 @@ function estatisticasPorAssunto(){
 // Os dois se acumulam (1,3 × 1,5 = 1,95 para questão de reforma de prova fiscal de
 // 2026). Para desligar, ponha 1 nas duas constantes.
 const BONUS_PROVA_FISCAL_RECENTE=1.3;
-const BONUS_REFORMA=1.5;
+const BONUS_REFORMA=2.0;
 const ID_TEC_INICIO_2025=3300000, ID_TEC_TETO=9000000;
 const RE_ORIGEM_FISCAL=/SEFAZ|SEFA |SEF SC|SEFIN|SER PB|Auditor Fiscal|Fiscal de (Tributos|Rendas|Receitas)|Agente (Fiscal|de Tributos)|Receita Estadual/i;
 const RE_ASSUNTO_REFORMA=/Complementar n?[ºo°.]*\s*(214|227)|LC n?[ºo°.]*\s*(214|227)|Constitucional n?[ºo°.]*\s*132|EC n?[ºo°.]*\s*132|\bIBS\b|\bCBS\b|Imposto Seletivo|Comitê Gestor|Reforma Tributária/i;
