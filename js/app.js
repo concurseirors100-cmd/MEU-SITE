@@ -3413,6 +3413,60 @@ function mesclarListaPorId(atualJson,novoJson){
   const ids=new Set(a.map(x=>x&&x.id));
   return JSON.stringify(a.concat(b.filter(x=>x&&!ids.has(x.id))));
 }
+// O histórico por dia (gráfico "Atividade por dia", tempo estudado) é um contador,
+// e contador de dois aparelhos não se mescla sem duplicar ou perder. O registro de
+// respostas guarda cada resposta com data e hora, então dá para unir sem repetir.
+// Por isso o registro manda: se um dia tem MAIS respostas no registro do que no
+// histórico (estudou nos dois sites no mesmo dia), o dia é recontado a partir do
+// registro. Nunca diminui um dia — só corrige o que ficou contado a menos.
+async function reconciliarHistComLog(){
+  if(!idbOk)return 0;
+  let L=[];try{L=await lerLog();}catch(e){return 0;}
+  const porDia={};
+  L.forEach(r=>{if(!r||typeof r.ts!=='number')return;const d=r.dia||ymd(new Date(r.ts));(porDia[d]=porDia[d]||[]).push(r);});
+  let n=0;
+  Object.entries(porDia).forEach(([d,rs])=>{
+    const atual=histCache[d];
+    if(rs.length<=totalDia(atual))return;
+    const novo={ac:0,er:0,ms:0,mat:{}};
+    rs.forEach(r=>{
+      if(r.nota===0)novo.er++;else novo.ac++;
+      if(r.ms>0){
+        let m=(r.materia||'').trim()||'Sem matéria';
+        if(typeof MATERIAS_UNIFICAR!=='undefined'&&MATERIAS_UNIFICAR[m])m=MATERIAS_UNIFICAR[m];
+        novo.ms+=r.ms;novo.mat[m]=(novo.mat[m]||0)+r.ms;
+      }
+    });
+    if(atual){
+      novo.ms=Math.max(novo.ms,atual.ms||0);
+      Object.entries(atual.mat||{}).forEach(([m,v])=>{if((novo.mat[m]||0)<v)novo.mat[m]=v;});
+    }
+    histCache[d]=novo;n++;
+  });
+  if(n)salvarHist();
+  return n;
+}
+// Campos de estudo de uma questão (agendamento e contadores). Na mesclagem, uma
+// questão que existe nos dois lados fica com o estado do lado que a respondeu por
+// último — o conteúdo (enunciado, gabarito corrigido) continua o deste navegador.
+const CAMPOS_ESTUDO=['reps','ef','interval','nextDue','ultimaErrada','refAcerto','firmeOk','consolidada','suspensa','favorita'];
+async function atualizarProgressoMesclado(importadas,respostasImp){
+  if(!idbOk||!Array.isArray(respostasImp)||!respostasImp.length)return 0;
+  const ultimo=arr=>{const m=new Map();arr.forEach(r=>{if(r&&typeof r.ts==='number'&&(m.get(r.qid)||0)<r.ts)m.set(r.qid,r.ts);});return m;};
+  const ultImp=ultimo(respostasImp);
+  let ultLoc;try{ultLoc=ultimo(await lerLog());}catch(e){return 0;}
+  const porId=new Map(questions.map(q=>[q.id,q]));
+  let n=0;
+  importadas.forEach(qi=>{
+    const q=porId.get(qi.id);if(!q)return;
+    if((ultImp.get(qi.id)||0)<=(ultLoc.get(qi.id)||0))return;   // este navegador já tem a resposta mais recente
+    const ac=Math.max(q.acertos||0,qi.acertos||0),er=Math.max(q.erros||0,qi.erros||0);
+    CAMPOS_ESTUDO.forEach(c=>{if(qi[c]!==undefined)q[c]=qi[c];});
+    q.acertos=ac;q.erros=er;
+    n++;
+  });
+  return n;
+}
 async function aplicarExtras(ex,modo){
   const subst=modo==='substituir',res={dias:0,respostas:0,chaves:0};
   // 1) histórico por dia
@@ -3460,6 +3514,8 @@ async function aplicarExtras(ex,modo){
     loadResumos();
     if(typeof loadCards==='function')loadCards();
   }
+  // 5) recontar os dias em que os dois aparelhos estudaram
+  if(!subst)res.dias+=await reconciliarHistComLog();
   return res;
 }
 async function renderBackupInfo(){
@@ -3569,7 +3625,10 @@ async function confirmarImport(modo){
     };
   }
   if(modo==='substituir'){questions=pendingImportData.map(importQ);}
-  else{const ids=new Set(questions.map(q=>q.id));const novas=pendingImportData.filter(q=>!ids.has(q.id)).map(importQ);questions.push(...novas);const dup=pendingImportData.length-novas.length;if(dup>0)notify(`Mesclado! ${novas.length} adicionadas, ${dup} já existiam.`,'ok');}
+  else{const ids=new Set(questions.map(q=>q.id));const novas=pendingImportData.filter(q=>!ids.has(q.id)).map(importQ);
+    const progresso=pendingImportExtras?await atualizarProgressoMesclado(pendingImportData,pendingImportExtras.respostas):0;
+    if(progresso)setTimeout(()=>notify(`✓ Progresso atualizado em ${progresso} questões respondidas no outro aparelho`,'ok'),5000);
+    questions.push(...novas);const dup=pendingImportData.length-novas.length;if(dup>0)notify(`Mesclado! ${novas.length} adicionadas, ${dup} já existiam.`,'ok');}
   save();pendingImportData=null;
   if(pendingImportExtras){
     try{
@@ -6227,6 +6286,8 @@ aplicarLabelTema();
     }
   }catch(e){console.error('[QuestIA] unificação de matérias:',e);}
   snapshotSeguranca();
+  // Corrige dias contados a menos por mesclagens antigas (que escolhiam o maior dia em vez de somar).
+  reconciliarHistComLog().then(n=>{if(n)setTimeout(()=>notify(`🔧 ${n} dia(s) do histórico recontados a partir do registro de respostas`,'ok'),2600);}).catch(()=>{});
   if(migrouAgora>0){
     setTimeout(()=>notify(`✓ ${migrouAgora} questões migradas para o IndexedDB. A cópia antiga foi mantida como segurança — veja em Backup → Armazenamento.`,'ok'),400);
   }
