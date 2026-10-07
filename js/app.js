@@ -1121,7 +1121,43 @@ function aplicarFuzz(iv,piso,cfg){
 // (UTC-3) isso empurrava em +1 dia todo intervalo calculado depois das 21h.
 function ymd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function today(){return ymd(new Date());}
-function isDue(q){return!q.suspensa&&(!q.nextDue||q.nextDue<=today());}
+// ===== MATÉRIAS PAUSADAS =====
+// Pausa temporária de uma matéria inteira (ex.: Inglês até a reta final). Diferente
+// de suspender: não marca questão nenhuma, então reativar devolve tudo exatamente
+// como estava — inclusive questões que você tinha suspendido uma a uma continuam
+// suspensas. A lista fica salva e vai junto no backup.
+const CHAVE_PAUSADAS='questia_materias_pausadas';
+let cachePausadas=null;
+function materiasPausadas(){
+  if(!cachePausadas){try{cachePausadas=new Set(JSON.parse(localStorage.getItem(CHAVE_PAUSADAS)||'[]'));}catch(e){cachePausadas=new Set();}}
+  return cachePausadas;
+}
+function materiaPausada(q){const p=materiasPausadas();return p.size>0&&p.has((q.materia||'').trim());}
+function salvarPausadas(set){cachePausadas=new Set(set);try{localStorage.setItem(CHAVE_PAUSADAS,JSON.stringify([...cachePausadas]));}catch(e){}}
+function pausarMateriaFiltrada(){
+  const m=estudarFiltroMateria();
+  if(!m){notify('Escolha a matéria no filtro ao lado e clique de novo','err');return;}
+  const n=questions.filter(q=>(q.materia||'').trim()===m).length;
+  const p=materiasPausadas();p.add(m);salvarPausadas(p);
+  document.getElementById('f-estudar-materia').value='';
+  populateEstudarSubtemas();updateSidebar();initStudy();
+  notify(`⏸ "${m}" pausada — ${n} questões fora da fila até você reativar`,'ok');
+}
+function reativarMateriaPausada(m){
+  const p=materiasPausadas();p.delete(m);salvarPausadas(p);
+  updateSidebar();initStudy();
+  notify(`▶ "${m}" de volta à fila`,'ok');
+}
+function renderMateriasPausadas(){
+  const el=document.getElementById('materias-pausadas');if(!el)return;
+  const p=[...materiasPausadas()].sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(!p.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)">Pausadas:'
+    +p.map(m=>{const n=questions.filter(q=>(q.materia||'').trim()===m).length;
+      return `<span class="tag" style="background:var(--indigo-light);color:var(--indigo-text);border:1px solid var(--indigo-border);display:inline-flex;gap:6px;align-items:center;text-transform:none;font-size:11px">⏸ ${esc(m)} · ${n}<button onclick="reativarMateriaPausada(${JSON.stringify(m).replace(/"/g,'&quot;')})" title="Reativar" style="background:none;border:none;cursor:pointer;color:inherit;font-weight:700;font-size:12px;padding:0">▶ reativar</button></span>`;}).join('')
+    +'</div>';
+}
+function isDue(q){return!q.suspensa&&!materiaPausada(q)&&(!q.nextDue||q.nextDue<=today());}
 function isLeech(q){return(q.erros||0)>=schedCfg().leechLimite;}
 // Quantos dias a questão está vencida (negativo = ainda não venceu)
 function diasAtraso(q){
@@ -1174,10 +1210,9 @@ function nav(page){document.querySelectorAll('.page').forEach(p=>p.classList.rem
     const toEl=document.getElementById('hist-to');
     const fromEl=document.getElementById('hist-from');
     if(!toEl.value){
-      const t=new Date(), f=new Date();
-      f.setDate(f.getDate()-29);
-      toEl.value=ymd(t);
-      fromEl.value=ymd(f);
+      // Padrão: o dia de hoje. Os botões Hoje/7d/30d/90d mudam o período.
+      toEl.value=today();
+      fromEl.value=today();
       renderHistChart();
     } else { renderHistChart(); }
   }if(page==='meta')renderMeta();if(page==='backup'){renderBackupInfo();renderStatusLotePratica();}if(page==='ranking')renderRanking();if(page==='dashboard')renderDashboard();updateSidebar();}
@@ -1420,8 +1455,9 @@ function renderBanco(){
       :due?'<span class="tag tag-due">🔴 Revisar</span>':'<span class="tag tag-ok">✓ Em dia</span>';
     const leech=isLeech(q)?`<span class="tag" style="background:var(--red-light);color:var(--red-text);border:1px solid var(--red-border)">🔥 Leech · ${q.erros} erros</span>`:'';
     const conf=q.conflito?`<span class="tag" style="background:var(--yellow-light);color:var(--yellow-text);border:1px solid var(--yellow-border)" title="O professor aponta outra alternativa. Use 🔍 Conferir gabaritos.">⚠️ Gabarito em conflito</span>`:'';
+    const notaP=q.comentarioPessoal?`<span class="tag" style="background:var(--yellow-light);color:var(--yellow-text);border:1px solid var(--yellow-border)" title="${esc(q.comentarioPessoal.texto)}">🗒️ meu comentário</span>`:'';
     const fav=q.favorita?'<span class="tag" style="background:var(--yellow-light);color:var(--yellow-text);border:1px solid var(--yellow-border)" title="Leve preferência na fila — some sozinha conforme o domínio consolida">⭐ Favorita</span>':'';
-    return `<div class="q-card" style="${q.suspensa?'opacity:.6':''}"><div class="q-card-head"><div class="q-meta">${q.materia?`<span class="tag tag-materia">${q.materia}</span>`:''}${q.banca?`<span class="tag tag-banca">${q.banca}</span>`:''}${q.subtema?`<span class="tag" style="background:var(--surface2);color:var(--ink2);border:1px solid var(--border2);cursor:pointer" title="${esc(q.origem||'')||'Filtrar por este subtema'}" onclick="filtrarPorSubtema('${esc(q.subtema).replace(/'/g,'&#39;')}')">${esc(q.subtema)}</span>`:''}${status}${leech}${fav}${conf}</div><div style="display:flex;gap:6px"><button class="btn btn-outline btn-sm" title="${q.favorita?'Remover dos favoritos':'Favoritar — leve preferência na fila, sem furar o agendamento'}" onclick="toggleFavorita(${q.id})" style="${q.favorita?'color:var(--yellow-text)':''}">${q.favorita?'★':'☆'}</button><button class="btn btn-outline btn-sm" title="${q.suspensa?'Reativar':'Suspender — sai da fila, continua no banco'}" onclick="toggleSuspensa(${q.id})">${q.suspensa?'▶':'⏸'}</button><button class="btn btn-danger btn-sm" onclick="delQ(${ri})">🗑</button></div></div><div class="q-text">${formatQuestionText(q.questao)}</div><div class="q-footer"><div class="q-ease">Facilidade:<div class="ease-pips">${pips}</div></div><div class="q-score">✓${q.acertos} ✗${q.erros} · próx: ${q.suspensa?'suspensa':fmtNextDue(q.nextDue)}</div></div></div>`;
+    return `<div class="q-card" style="${q.suspensa?'opacity:.6':''}"><div class="q-card-head"><div class="q-meta">${q.materia?`<span class="tag tag-materia">${q.materia}</span>`:''}${q.banca?`<span class="tag tag-banca">${q.banca}</span>`:''}${q.subtema?`<span class="tag" style="background:var(--surface2);color:var(--ink2);border:1px solid var(--border2);cursor:pointer" title="${esc(q.origem||'')||'Filtrar por este subtema'}" onclick="filtrarPorSubtema('${esc(q.subtema).replace(/'/g,'&#39;')}')">${esc(q.subtema)}</span>`:''}${status}${leech}${fav}${conf}${notaP}</div><div style="display:flex;gap:6px"><button class="btn btn-outline btn-sm" title="${q.favorita?'Remover dos favoritos':'Favoritar — leve preferência na fila, sem furar o agendamento'}" onclick="toggleFavorita(${q.id})" style="${q.favorita?'color:var(--yellow-text)':''}">${q.favorita?'★':'☆'}</button><button class="btn btn-outline btn-sm" title="${q.suspensa?'Reativar':'Suspender — sai da fila, continua no banco'}" onclick="toggleSuspensa(${q.id})">${q.suspensa?'▶':'⏸'}</button><button class="btn btn-danger btn-sm" onclick="delQ(${ri})">🗑</button></div></div><div class="q-text">${formatQuestionText(q.questao)}</div><div class="q-footer"><div class="q-ease">Facilidade:<div class="ease-pips">${pips}</div></div><div class="q-score">✓${q.acertos} ✗${q.erros} · próx: ${q.suspensa?'suspensa':fmtNextDue(q.nextDue)}</div></div></div>`;
   }).join('');
   const mats=[...new Set(questions.map(q=>(q.materia||'').trim()).filter(Boolean))].sort(),bans=[...new Set(questions.map(q=>(q.banca||'').trim()).filter(Boolean))].sort();
   const ms=document.getElementById('f-materia'),bs=document.getElementById('f-banca'),cv=ms.value,cb=bs.value;
@@ -1593,7 +1629,7 @@ async function carregarHistResp(){
     const usados=new Set();
     for(const e of lst){
       if(e.nota!==0||e.ts<janela)continue;
-      const q=porId.get(e.qid);if(!q||q.suspensa||ehLeech(q))continue;
+      const q=porId.get(e.qid);if(!q||q.suspensa||materiaPausada(q)||ehLeech(q))continue;
       const pago=lst.findIndex((o,i)=>!usados.has(i)&&o.ts>e.ts&&o.qid!==e.qid);
       if(pago>=0){usados.add(pago);continue;}
       if(!dividas.has(k))dividas.set(k,{n:0,errados:new Set()});
@@ -1613,7 +1649,7 @@ function escolherIrmas(limite,statsMap,excluir){
   const semResposta=q=>!(q.acertos||0)&&!(q.erros||0)&&!(q.reps||0);
   const recente=Date.now()-QUAL_IRMA_RECENTE*86400000;
   const porAssunto=new Map();
-  questions.forEach(q=>{if(q.suspensa||!filtroSessao(q))return;const k=chaveAssunto(q);if(!porAssunto.has(k))porAssunto.set(k,[]);porAssunto.get(k).push(q);});
+  questions.forEach(q=>{if(q.suspensa||materiaPausada(q)||!filtroSessao(q))return;const k=chaveAssunto(q);if(!porAssunto.has(k))porAssunto.set(k,[]);porAssunto.get(k).push(q);});
   // disciplinas com dívida; dentro de cada uma, os assuntos pelo score do assunto
   const scoreAssunto=k=>{const st=statsMap.get(k)||{taxaErro:0.5};return pesoDaMateria(k.split('§')[0])*(0.5+st.taxaErro);};
   const porDisc=new Map();
@@ -1901,7 +1937,7 @@ function aplicarReservaProvaI(fila,elegiveis,teto){
   return nova.slice(0,teto||nova.length);
 }
 async function initStudy(){
-  renderAvisoReta();
+  renderAvisoReta();renderMateriasPausadas();
   populateEstudarMaterias();
   populateEstudarSubtemas();
   sessOk=0;sessErr=0;ratingLock=false;
@@ -2003,6 +2039,7 @@ function showCard(){
   const meta=[q.materia,q.banca].filter(Boolean).join(' · ')||'Questão';
   const subtemaStr=q.subtema?` · ${q.subtema}`:'';
   document.getElementById('fc-meta').textContent=meta+subtemaStr;
+  renderNotaQuestao(q,false);
   const favBtn=document.getElementById('fc-fav-btn');
   if(favBtn){favBtn.textContent=q.favorita?'★':'☆';favBtn.style.color=q.favorita?'var(--yellow-text)':'var(--muted)';favBtn.title=q.favorita?'Remover dos favoritos':'Favoritar — leve preferência na fila, sem furar o agendamento do SM-2';}
   document.getElementById('fc-q').innerHTML=formatQuestionText(q.questao);
@@ -2094,6 +2131,50 @@ function salvarCorrecaoGabarito(i){
   notify('✓ Gabarito corrigido para a alternativa '+String.fromCharCode(65+i),'ok');
   showCard();
 }
+// ===== MEU COMENTÁRIO DA QUESTÃO =====
+// Nota pessoal presa à questão (q.comentarioPessoal), que reaparece sempre que ela
+// voltar na fila. Antes de responder fica recolhida, para não entregar a resposta;
+// depois de responder abre sozinha.
+function renderNotaQuestao(q,aberto){
+  const box=document.getElementById('fc-nota-pessoal'),btn=document.getElementById('fc-nota-btn');
+  const n=q&&q.comentarioPessoal&&q.comentarioPessoal.texto;
+  if(btn){btn.style.color=n?'var(--accent2)':'var(--muted)';btn.title=n?'Ver/editar meu comentário sobre esta questão':'Meu comentário sobre esta questão — fica guardado nela e aparece sempre que ela voltar';}
+  if(!box)return;
+  if(!n){box.style.display='none';box.innerHTML='';return;}
+  const quando=q.comentarioPessoal.em?new Date(q.comentarioPessoal.em).toLocaleDateString('pt-BR'):'';
+  box.style.display='block';
+  box.innerHTML=`<details class="pratica-box" style="border-left-color:var(--yellow)"${aberto?' open':''}><summary style="color:var(--yellow-text)">🗒️ Meu comentário <small>${quando?'escrito em '+quando:''} · clique para ${aberto?'recolher':'abrir'}</small></summary>`
+    +`<div style="white-space:pre-wrap;margin-top:8px">${esc(n)}</div>`
+    +`<div style="margin-top:8px;text-align:right"><button class="note-btn" onclick="abrirNotaQuestao()">✏️ Editar</button></div></details>`;
+}
+function abrirNotaQuestao(){
+  const q=dueQueue[dueIdx];if(!q){notify('Nenhuma questão ativa','err');return;}
+  const real=questions.find(x=>x.id===q.id)||q;
+  document.getElementById('notaq-meta').textContent=[real.materia,real.subtema].filter(Boolean).join(' · ');
+  document.getElementById('notaq-txt').value=(real.comentarioPessoal&&real.comentarioPessoal.texto)||'';
+  document.getElementById('notaq-apagar').style.visibility=real.comentarioPessoal?'visible':'hidden';
+  document.getElementById('notaq-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('notaq-txt').focus(),60);
+}
+function fecharNotaQuestao(){document.getElementById('notaq-modal').classList.remove('open');}
+function gravarNotaQuestao(texto){
+  const q=dueQueue[dueIdx];if(!q)return;
+  const real=questions.find(x=>x.id===q.id);if(!real)return;
+  if(texto)real.comentarioPessoal={texto,em:new Date().toISOString()};else delete real.comentarioPessoal;
+  if(q!==real){if(texto)q.comentarioPessoal=real.comentarioPessoal;else delete q.comentarioPessoal;}
+  save();fecharNotaQuestao();
+  renderNotaQuestao(real,document.getElementById('fc-ans').classList.contains('show'));
+}
+function salvarNotaQuestao(){
+  const t=document.getElementById('notaq-txt').value.trim();
+  if(!t){notify('Escreva algo — ou use Apagar','err');return;}
+  gravarNotaQuestao(t);notify('🗒️ Comentário guardado nesta questão','ok');
+}
+function apagarNotaQuestao(){
+  if(!confirm('Apagar o seu comentário desta questão?'))return;
+  gravarNotaQuestao('');notify('Comentário apagado','ok');
+}
+
 // ===== MARCAR / DESCARTAR ALTERNATIVAS (antes de confirmar) =====
 // Fluxo de duas etapas para simular como se resolve questão no papel: 1 clique
 // marca a alternativa que você está considerando (sem revelar nada ainda);
@@ -2166,6 +2247,7 @@ function selectAlt(chosen){
     // leitura curta se beneficia de coluna mais estreita.
     document.querySelector('.fc-wrap').classList.add('expanded');
     document.getElementById('fc-ans').classList.add('show');
+    renderNotaQuestao(questions.find(x=>x.id===q.id)||q,true);
   }
   updateRatingLabels(q);
   document.getElementById('fc-rate').classList.add('show');
@@ -2775,7 +2857,7 @@ async function questoesForcadasPorCobertura(){
     // pega a questão elegível dessa matéria com o intervalo mais LONGO — é a que
     // o SM-2 mais "esqueceu" de mandar de volta, então é a mais urgente pra forçar
     // consolidadas (nunca errou + 2 acertos) não servem para forçar cobertura até a prova
-    const candidatas=questions.filter(q=>!q.suspensa&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
+    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
     if(!candidatas.length)return;
     candidatas.sort((a,b)=>(b.interval||0)-(a.interval||0));
     forcar.push(candidatas[0]);
@@ -3621,12 +3703,14 @@ async function confirmarImport(modo){
       erros: q.erros||0,
       suspensa: q.suspensa||false,
       favorita: q.favorita||false,
+      ...(q.comentarioPessoal?{comentarioPessoal:q.comentarioPessoal}:{}),
       consolidada: q.consolidada||false,
     };
   }
   if(modo==='substituir'){questions=pendingImportData.map(importQ);}
   else{const ids=new Set(questions.map(q=>q.id));const novas=pendingImportData.filter(q=>!ids.has(q.id)).map(importQ);
     const progresso=pendingImportExtras?await atualizarProgressoMesclado(pendingImportData,pendingImportExtras.respostas):0;
+    {const porIdC=new Map(questions.map(q=>[q.id,q]));pendingImportData.forEach(qi=>{const q=porIdC.get(qi.id);if(q&&qi.comentarioPessoal&&(!q.comentarioPessoal||(qi.comentarioPessoal.em||'')>(q.comentarioPessoal.em||'')))q.comentarioPessoal=qi.comentarioPessoal;});}
     if(progresso)setTimeout(()=>notify(`✓ Progresso atualizado em ${progresso} questões respondidas no outro aparelho`,'ok'),5000);
     questions.push(...novas);const dup=pendingImportData.length-novas.length;if(dup>0)notify(`Mesclado! ${novas.length} adicionadas, ${dup} já existiam.`,'ok');}
   save();pendingImportData=null;
@@ -4191,6 +4275,36 @@ async function praticaChamarAPI(modelo,prompt){
   if(uso&&uso.input&&typeof uso.input==='object')return uso.input;
   return praticaParseTexto((j.content||[]).map(b=>b.text||'').join(''));
 }
+// Menu do botão 💡 Na prática. Se a questão já tem o comentário, mostra; se não tem,
+// oferece três caminhos: gerar pela API (gasta crédito), copiar o pedido para uma IA
+// externa (grátis, ex.: Claude.ai ou ChatGPT) ou colar a resposta que ela devolveu.
+function praticaMenu(){
+  const q=dueQueue[dueIdx];
+  if(!q){notify('Nenhuma questão ativa','err');return;}
+  if(!document.getElementById('fc-ans').classList.contains('show')){notify('Responda a questão primeiro — o "Na prática" usa o comentário do professor','err');return;}
+  const real=questions.find(x=>x.id===q.id)||q;
+  if(real.pratico){renderPratica(real,true);return;}
+  const box=document.getElementById('fc-pratica');
+  box.style.display='block';
+  box.innerHTML=`<div class="pratica-box"><div class="pratica-tit" style="margin-bottom:8px">💡 Na prática — esta questão ainda não tem. Como quer gerar?</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="note-btn" onclick="praticaCopiarExterno(true)" title="Copia o pedido pronto e abre o Claude Desktop numa conversa nova">🚀 Copiar e abrir no Claude <small>(grátis)</small></button>
+      <button class="note-btn" onclick="praticaCopiarExterno(false)" title="Copia o pedido pronto para colar em qualquer IA (Claude.ai, ChatGPT…)">📋 Só copiar o pedido <small>(grátis)</small></button>
+      <button class="note-btn" onclick="abrirColarPratica()" title="Cole aqui o JSON que a IA externa devolveu">📥 Colar resposta</button>
+      <button class="note-btn" onclick="gerarPratica(false)" title="Gera aqui mesmo, usando a chave da Anthropic">⚡ Gerar pela API <small>(gasta crédito)</small></button>
+    </div>
+    <div class="dash-cap" style="margin-top:8px">IA externa: copie o pedido, cole na IA, copie o JSON que ela devolver e clique em <b>📥 Colar resposta</b>. Fica salvo nesta questão, igual ao gerado pela API.</div></div>`;
+}
+async function praticaCopiarExterno(abrir){
+  const q=dueQueue[dueIdx];if(!q)return;
+  const real=questions.find(x=>x.id===q.id)||q;
+  const formato={itens:[{id:real.id,impressao:impressaoQuestao(real),pratico:{cenario:'...',passos:['...'],contraste:'...',resumo:'...',conecta:'...',teste:{pergunta:'...',resposta:'...'},alerta:''}}]};
+  const prompt=praticaPrompt(real).replace(/Entregue chamando a ferramenta registrar_pratica com esses campos\.\s*$/,'')
+    +'FORMATO DA RESPOSTA: responda SOMENTE com o JSON abaixo, preenchido (sem texto antes ou depois). Copie "id" e "impressao" exatamente como estão.\n'
+    +JSON.stringify(formato);
+  if(abrir){await abrirNoClaude(prompt);}
+  else{const ok=await copiarTextoParaClipboard(prompt);notify(ok?'📋 Pedido copiado — cole na IA e depois use 📥 Colar resposta':'Não consegui copiar','ok');}
+}
 async function gerarPratica(refazer){
   const q=dueQueue[dueIdx];
   if(!q){notify('Nenhuma questão ativa','err');return;}
@@ -4421,6 +4535,7 @@ function aplicarLotePratica(d){
      renderStatusLotePratica();}
     document.getElementById('lotepr-info').textContent=`📥 ${aplicar.length} questões receberam o "Na prática".`+(rec.textoMudou.length?` ${rec.textoMudou.length} recusadas por texto alterado.`:'');
     notify(`📥 "Na prática" gravado em ${aplicar.length} questões`,'ok');
+    {const atual=dueQueue[dueIdx],achou=atual&&aplicar.find(o=>o.q.id===atual.id);if(achou)renderPratica(achou.q,true);}
   }
 }
 

@@ -165,6 +165,8 @@
       <div style="margin-bottom:16px">
         <select class="filter-sel" id="f-estudar-materia" onchange="populateEstudarSubtemas();initStudy()" style="min-width:220px"></select>
         <select class="filter-sel" id="f-estudar-subtema" onchange="initStudy()" style="min-width:240px;max-width:340px"></select>
+        <button class="btn btn-outline btn-sm" onclick="pausarMateriaFiltrada()" title="Tira a matéria escolhida no filtro da fila de estudo, sem apagar nada. Reative com um clique quando quiser." style="vertical-align:middle">⏸ Pausar esta matéria</button>
+        <div id="materias-pausadas" style="margin-top:10px"></div>
       </div>
       <div class="session-bar">
         <div class="session-stat"><div class="session-stat-num" id="ss-due" style="color:var(--accent)">0</div><div class="session-stat-label">Para Revisar</div></div>
@@ -189,11 +191,13 @@
                   <button id="fc-pincel-btn" onclick="pincelToggle()" title="Pincel (tecla P) — rabiscar sobre a questão. O traço some ao passar para a próxima." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">✏️</button>
                   <button id="fc-calc-btn" class="calc-toggle-btn" onclick="toggleCalculadora()" title="Calculadora — abre um painel à direita, pra bater um índice sem sair do estudo." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🧮</button>
                   <button id="fc-gabarito-btn" onclick="abrirCorrigirGabarito()" title="O sistema marcou a alternativa errada como correta? Corrija aqui — a mudança fica salva pra sempre nesta questão." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🔑</button>
+                  <button id="fc-nota-btn" onclick="abrirNotaQuestao()" title="Meu comentário sobre esta questão — fica guardado nela e aparece sempre que ela voltar" style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🗒️</button>
                   <button id="fc-fav-btn" onclick="favoritarAtual()" title="Favoritar — leve preferência na fila, sem furar o agendamento do SM-2" style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">☆</button>
                 </div>
               </div>
               <div class="fc-question" id="fc-q"></div>
               <div id="fc-conflito" style="display:none"></div>
+              <div id="fc-nota-pessoal" style="display:none"></div>
               <div class="alternatives" id="fc-alts"></div>
               <div id="alt-confirm-wrap" style="display:none;margin-top:14px;text-align:center">
                 <div style="font-size:11px;color:var(--muted);margin-bottom:8px">1 clique marca · 2 cliques descarta (risca) a alternativa</div>
@@ -213,7 +217,7 @@
                     <button class="note-btn" onclick="copiarQuestaoAtual()" title="Copia esta questão (enunciado + comentário) e tenta abrir o Claude Desktop na hora, numa conversa nova só com ela, no formato didático da skill questoes-comentadas">📋 Copiar e abrir agora</button>
                     <button class="note-btn" onclick="copiaEColaQuestao()" title="Copia só o conteúdo da questão — enunciado, alternativas na ordem original, gabarito e comentário do professor — sem skill e sem instrução, para colar em qualquer IA">📄 Copia e cola</button>
                     <button class="note-btn" onclick="abrirFundamentacao()" title="Abre o Claude Desktop numa conversa NOVA já com a skill /fundamentacao-conceitual e esta questão — para entender o conceito por trás, não decorar. O modelo você escolhe no seletor antes de enviar (o link não consegue definir isso).">🧠 Fundamentar conceito</button>
-                    <button class="note-btn" onclick="gerarPratica(false)" title="Comentários práticos sobre o assunto desta questão, gerados pela IA dentro da plataforma (cenário real, passo a passo, como a banca distorce, teste rápido). Fica salvo na questão — só gasta crédito na primeira vez.">💡 Na prática</button>
+                    <button class="note-btn" onclick="praticaMenu()" title="Comentários práticos sobre o assunto desta questão, gerados pela IA dentro da plataforma (cenário real, passo a passo, como a banca distorce, teste rápido). Fica salvo na questão — só gasta crédito na primeira vez.">💡 Na prática</button>
                     <button class="note-btn" onclick="abrirAnotacao()" title="Anotar um resumo breve desta questão">📝 Anotar</button>
                   </div>
                 </div>
@@ -335,6 +339,7 @@
               <input type="date" id="hist-to" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Outfit',sans-serif;font-size:12px;color:var(--ink);outline:none;cursor:pointer" onchange="renderHistChart()">
             </div>
             <div style="display:flex;align-items:center;gap:6px">
+              <button onclick="setHistPeriod(1)" class="btn btn-ghost btn-sm">Hoje</button>
               <button onclick="setHistPeriod(7)" class="btn btn-ghost btn-sm">7d</button>
               <button onclick="setHistPeriod(30)" class="btn btn-ghost btn-sm">30d</button>
               <button onclick="setHistPeriod(90)" class="btn btn-ghost btn-sm">90d</button>
@@ -644,6 +649,22 @@
 </div>
 
 <!-- MODAL ANOTAR PARA O RESUMO -->
+<!-- MODAL MEU COMENTÁRIO DESTA QUESTÃO -->
+<div class="modal-bg" id="notaq-modal">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-head">
+      <div><div class="modal-title">Meu comentário sobre esta questão</div><div class="anot-meta" id="notaq-meta"></div></div>
+      <button class="modal-close" onclick="fecharNotaQuestao()">×</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.6">Fica guardado nesta questão e aparece no cartão sempre que ela voltar. Diferente do 📝 Anotar, que vai para a aba Resumos.</div>
+    <textarea class="anot-textarea" id="notaq-txt" rows="7" placeholder="Ex.: caí na pegadinha do prazo — é 30 dias, não 60. Lembrar do art. X."></textarea>
+    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:18px;border-top:1px solid var(--border);padding-top:16px">
+      <button class="btn btn-ghost" id="notaq-apagar" onclick="apagarNotaQuestao()">🗑 Apagar</button>
+      <div style="display:flex;gap:10px"><button class="btn btn-ghost" onclick="fecharNotaQuestao()">Cancelar</button><button class="btn btn-primary" onclick="salvarNotaQuestao()">Salvar</button></div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="colarpr-modal">
   <div class="modal" style="max-width:760px">
     <div class="modal-head">
