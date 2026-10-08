@@ -1053,6 +1053,7 @@ function salvarSchedCfg(c){localStorage.setItem('questia_sched',JSON.stringify(c
 // Sob o teto da reta final, as notas se espalham entre a espera do erro e o teto:
 // Difícil a 1/3 do caminho, Bom a 2/3, Fácil e Dominada no teto.
 const FRACAO_SOB_TETO=[null,1/3,2/3,1,1];
+const ERRO_VOLTA_MIN=2, ERRO_VOLTA_MAX=3;
 function sm2(q,reps,ef,interval,semFuzz,fonte){
   // q: 0=Errei, 1=Difícil, 2=Bom, 3=Fácil, 4=Dominada
   const cfg=schedCfg(fonte);
@@ -1067,6 +1068,7 @@ function sm2(q,reps,ef,interval,semFuzz,fonte){
     // Na reta final o erro de uma questão madura não pode voltar DEPOIS do Difícil
     // (antes: intervalo 36 → Errei 11 dias, Difícil espalhado em 8). Volta na espera do erro.
     {const n=diasAteProva();if(n!==null&&n>0&&retaAlcanca(fonte)&&anterior*cfg.fatorDificil*cfg.im>cfg.tetoDias)base=Math.min(base,Math.max(1,Math.min(QUAL_ERRO_ESPERA,cfg.tetoDias)));}
+    base=Math.min(Math.max(base,ERRO_VOLTA_MIN),ERRO_VOLTA_MAX); // errou: volta em 2 a 3 dias (1 dia = ainda lembra da resposta de ontem; 4+ = já esqueceu)
   } else if(reps===0||anterior===0){
     base=cfg.entrada[q];piso=1;reps=1;
   } else {
@@ -2944,6 +2946,7 @@ function suspenderTodasForaDoEdital(){
 function dadosMeta(){
   const porMat=new Map();
   questions.forEach(q=>{
+    if(q.suspensa)return;                                  // suspensa = fora do perfil: não entra na Meta
     if((q.fonte||'ia')!=='tec')return;                 // só banca
     const m=(q.materia||'').trim();
     const o=porMat.get(m)||{ac:0,er:0,qtd:0};
