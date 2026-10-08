@@ -4417,6 +4417,10 @@ async function filaParaLotePratica(){
   // 1) a sessão aberta (o que ainda falta dela) e 2) a fila de hoje calculada do zero
   (dueQueue||[]).slice(dueIdx||0).forEach(x=>add(porId.get(x.id)));
   (await filaDeHojeSilenciosa()).forEach(x=>add(porId.get(x.id)));
+  // 2b) a fila de um dia novo, calculada do zero (sem descontar o que já respondeu hoje): é o que o app vai
+  //     servir em seguida, com as inéditas da cota. Sem isso, depois de bater a meta do dia o lote saía só com
+  //     revisões antigas e quase nenhuma das questões que aparecem amanhã.
+  {const salvoRH=window.respondidasHoje; window.respondidasHoje=()=>0; try{(await filaDeHojeSilenciosa()).forEach(x=>add(porId.get(x.id)));}catch(e){}finally{window.respondidasHoje=salvoRH;}}
   // 3) o que já venceu e não coube hoje, na mesma prioridade do app
   const ehNova=q=>q.fonte==='tec'&&!(q.acertos||0)&&!(q.erros||0)&&!(q.reps||0);
   const vencidas=questions.filter(q=>ok(q)&&!vistos.has(q.id)&&naSessao(q));
@@ -4424,7 +4428,8 @@ async function filaParaLotePratica(){
   let rev=vencidas.filter(q=>!ehNova(q)),nov=vencidas.filter(ehNova);
   try{rev=ordenarRevisoes(rev,statsMap);}catch(e){}
   try{nov=ordenarNovasPorDeficit(nov,statsComTetoFatia(statsMap,TETO_FATIA_NOVAS));}catch(e){}
-  rev.forEach(add);nov.forEach(add);
+  // revisões e inéditas na proporção da cota do dia (antes: todas as revisões primeiro, e as inéditas — ~40% do que aparece — nunca entravam no lote)
+  {const cotaN=(schedCfg().cotaNovas??0.40); let iR=0,iN=0; while(iR<rev.length||iN<nov.length){if(iN<nov.length&&(iR>=rev.length||iN<Math.round((iR+iN+1)*cotaN)))add(nov[iN++]); else add(rev[iR++]);}}
   // 4) o que vence nos próximos dias
   questions.filter(q=>ok(q)&&!vistos.has(q.id)&&!q.suspensa).sort((a,b)=>String(a.nextDue||'9').localeCompare(String(b.nextDue||'9'))).forEach(add);
   return saida;
