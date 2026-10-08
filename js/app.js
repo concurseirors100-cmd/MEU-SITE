@@ -1568,8 +1568,7 @@ function ehLeech(q){return (q.erros||0)>=(schedCfg().leechLimite||5);}
 function consolidadaAteProva(q){
   const n=diasAteProva(); if(n===null||n<=0)return false;
   if(q.erros||0)return false;
-  if(q.firmeOk!==undefined)return q.firmeOk===true;           // regra nova: 2 acertos a 7+ dias
-  return q.refAcerto===undefined&&(q.acertos||0)>=2;            // legado (antes de 26/09)
+  return (q.acertos||0)>=2;   // 2 acertos e nenhum erro: sai da fila até a prova (decisão do Anderson em 08/10; sem espaçamento mínimo)
 }
 // Chamado em rate() num ACERTO, antes de acertos/erros mudarem.
 function registrarAcertoFirme(q){
