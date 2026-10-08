@@ -2854,6 +2854,7 @@ async function questoesForcadasPorCobertura(){
   const materiasRecentes=new Set(log.map(r=>(r.materia||'').trim()));
   const pesadas=EDITAL.filter(d=>d.pts/PESO_MAX_EDITAL>=LIMIAR_PESO_COBERTURA).flatMap(d=>d.m);
   const forcar=[];
+  const smCob=estatisticasPorAssunto();
   pesadas.forEach(m=>{
     if(materiasRecentes.has(m))return; // já apareceu recentemente, não precisa forçar
     // pega a questão elegível dessa matéria com o intervalo mais LONGO — é a que
@@ -2861,8 +2862,10 @@ async function questoesForcadasPorCobertura(){
     // consolidadas (nunca errou + 2 acertos) não servem para forçar cobertura até a prova
     const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
     if(!candidatas.length)return;
-    candidatas.sort((a,b)=>(b.interval||0)-(a.interval||0));
-    forcar.push(candidatas[0]);
+    // Escolhe pelo mesmo critério da fila (peso do assunto × taxa de erro × atraso), preferindo quem já venceu.
+    // Antes: maior intervalo = a mais decorada, que o SM-2 tinha adiado de propósito.
+    const vencidas=candidatas.filter(isDue);
+    forcar.push(vencidas.length?vencidas.reduce((m,q)=>calcScore(q,smCob)>calcScore(m,smCob)?q:m):candidatas.reduce((m,q)=>(q.nextDue||'')<(m.nextDue||'')?q:m));
   });
   return forcar;
 }
