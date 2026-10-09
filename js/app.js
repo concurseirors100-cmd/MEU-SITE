@@ -3453,7 +3453,7 @@ async function renderMistura(){
       <div style="flex:0 0 58px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${n} · ${Math.round(n/seq.length*100)}%</div>
     </div>`).join('')}`;
 }
-function renderStats(){renderSubtemas();renderMistura();const ac=questions.reduce((a,q)=>a+(q.acertos||0),0),er=questions.reduce((a,q)=>a+(q.erros||0),0),pct=(ac+er)>0?Math.round(ac/(ac+er)*100):null;document.getElementById('st-total').textContent=questions.length;document.getElementById('st-ac').textContent=ac;document.getElementById('st-er').textContent=er;document.getElementById('st-pct').textContent=pct!==null?pct+'%':'—';const byMat={};questions.forEach(q=>{const m=q.materia||'Sem matéria';if(!byMat[m])byMat[m]={ac:0,er:0,tot:0};byMat[m].ac+=q.acertos||0;byMat[m].er+=q.erros||0;byMat[m].tot++;});const mxT=Math.max(...Object.values(byMat).map(v=>v.ac+v.er),1);document.getElementById('mat-chart').innerHTML=Object.entries(byMat).sort((a,b)=>b[1].tot-a[1].tot).slice(0,7).map(([nm,v])=>{const t=v.ac+v.er,p=t>0?Math.round(v.ac/t*100):0,w=t>0?Math.round(t/mxT*100):5;return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${nm}</span><span class="mat-pct">${t>0?p+'%':v.tot+' q'}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const mxCount=Math.max(...Object.values(byMat).map(v=>v.tot),1);document.getElementById('mat-count-chart').innerHTML=Object.entries(byMat).sort((a,b)=>a[1].tot-b[1].tot).map(([nm,v])=>{const w=Math.round(v.tot/mxCount*100);return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${esc(nm)}</span><span class="mat-pct">${v.tot} q</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%;background:var(--accent2)"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const byBan={};questions.forEach(q=>{const b=q.banca||'Outras';byBan[b]=(byBan[b]||0)+1;});const sorted=Object.entries(byBan).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=Math.max(...sorted.map(([,v])=>v),1),cols=['var(--accent)','var(--accent2)','var(--green)','var(--yellow)','#8b5cf6','#ec4899'];document.getElementById('banca-chart').innerHTML=sorted.map(([nm,cnt],i)=>`<div class="bar-g"><div class="bar-v">${cnt}</div><div class="bar-b" style="height:${Math.round(cnt/mx*100)}%;background:${cols[i%cols.length]}"></div><div class="bar-l">${nm.substring(0,7)}</div></div>`).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';}
+function renderStats(){renderDesempenhoPeriodo();renderSubtemas();renderMistura();const ac=questions.reduce((a,q)=>a+(q.acertos||0),0),er=questions.reduce((a,q)=>a+(q.erros||0),0),pct=(ac+er)>0?Math.round(ac/(ac+er)*100):null;document.getElementById('st-total').textContent=questions.length;document.getElementById('st-ac').textContent=ac;document.getElementById('st-er').textContent=er;document.getElementById('st-pct').textContent=pct!==null?pct+'%':'—';const byMat={};questions.forEach(q=>{const m=q.materia||'Sem matéria';if(!byMat[m])byMat[m]={ac:0,er:0,tot:0};byMat[m].ac+=q.acertos||0;byMat[m].er+=q.erros||0;byMat[m].tot++;});const mxT=Math.max(...Object.values(byMat).map(v=>v.ac+v.er),1);document.getElementById('mat-chart').innerHTML=Object.entries(byMat).sort((a,b)=>b[1].tot-a[1].tot).slice(0,7).map(([nm,v])=>{const t=v.ac+v.er,p=t>0?Math.round(v.ac/t*100):0,w=t>0?Math.round(t/mxT*100):5;return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${nm}</span><span class="mat-pct">${t>0?p+'%':v.tot+' q'}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const mxCount=Math.max(...Object.values(byMat).map(v=>v.tot),1);document.getElementById('mat-count-chart').innerHTML=Object.entries(byMat).sort((a,b)=>a[1].tot-b[1].tot).map(([nm,v])=>{const w=Math.round(v.tot/mxCount*100);return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${esc(nm)}</span><span class="mat-pct">${v.tot} q</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%;background:var(--accent2)"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const byBan={};questions.forEach(q=>{const b=q.banca||'Outras';byBan[b]=(byBan[b]||0)+1;});const sorted=Object.entries(byBan).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=Math.max(...sorted.map(([,v])=>v),1),cols=['var(--accent)','var(--accent2)','var(--green)','var(--yellow)','#8b5cf6','#ec4899'];document.getElementById('banca-chart').innerHTML=sorted.map(([nm,cnt],i)=>`<div class="bar-g"><div class="bar-v">${cnt}</div><div class="bar-b" style="height:${Math.round(cnt/mx*100)}%;background:${cols[i%cols.length]}"></div><div class="bar-l">${nm.substring(0,7)}</div></div>`).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';}
 
 // BACKUP — EXPORTAR
 // ===== BACKUP COMPLETO =====
@@ -6463,3 +6463,99 @@ setTimeout(checkBackupDot,1500);
 // Wrap save para rastrear timestamp
 const _origSave=save;
 save=function(){_origSave();localStorage.setItem('questia_last_save_ts',Date.now().toString());checkBackupDot();};
+
+// ===== DESEMPENHO NO PERÍODO POR DISCIPLINA =====
+// Pedido do Anderson (09/10): estatística de um período escolhido, separada por disciplina
+// e assunto, no estilo da tela de desempenho do TEC. Vem do registro de respostas (uma linha
+// por resposta), não dos contadores acumulados da questão, por isso respeita o período.
+// Acerto = clique na alternativa certa; em resposta antiga sem esse dado, vale a nota
+// (qualquer nota diferente de "Errei").
+let dpOrdem = 'resp';
+const dpAbertas = new Set();
+let dpMats = [];
+function dpAcertou(r) { return (r.acertouClique === null || r.acertouClique === undefined) ? r.nota > 0 : !!r.acertouClique; }
+function dpCard() {
+  let c = document.getElementById('dp-card'); if (c) return c;
+  const pg = document.getElementById('page-stats'); const body = pg && pg.querySelector('.page-body'); if (!body) return null;
+  c = document.createElement('div'); c.id = 'dp-card'; c.className = 'card'; c.style.cssText = 'padding:24px;margin-bottom:24px';
+  const inp = "background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Outfit',sans-serif;font-size:12px;color:var(--ink);outline:none;cursor:pointer";
+  const btn = "background:var(--surface2);border:1px solid var(--border);color:var(--ink2);border-radius:7px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;font-family:'Outfit',sans-serif";
+  c.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px">
+    <div class="chart-title" style="margin:0">🎯 Desempenho no período por disciplina</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <input type="date" id="dp-de" style="${inp}" onchange="renderDesempenhoPeriodo()">
+      <span style="color:var(--muted);font-size:12px">até</span>
+      <input type="date" id="dp-ate" style="${inp}" onchange="renderDesempenhoPeriodo()">
+      ${[['Hoje', 0], ['7 dias', 6], ['30 dias', 29], ['Tudo', -1]].map(([t, n]) => `<button style="${btn}" onclick="dpPreset(${n})">${t}</button>`).join('')}
+    </div></div>
+  <div id="dp-resumo" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;margin-bottom:16px"></div>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:10px">
+    <span style="font-weight:600">Ordem:</span>
+    ${[['resp', 'Mais resolvidas'], ['fracos', 'Pontos fracos'], ['fortes', 'Pontos fortes'], ['nome', 'Nome']].map(([k, t]) => `<label style="cursor:pointer;white-space:nowrap"><input type="radio" name="dp-ordem" value="${k}" ${k === dpOrdem ? 'checked' : ''} onchange="dpOrdem=this.value;renderDesempenhoPeriodo()"> ${t}</label>`).join('')}
+    <span style="margin-left:auto">Toque numa disciplina para abrir os assuntos</span>
+  </div>
+  <div id="dp-lista"></div>`;
+  body.insertBefore(c, body.children[1] || null); // logo abaixo dos quadros do topo
+  dpPreset(29, true);
+  return c;
+}
+function dpPreset(n, silencioso) {
+  const ate = today(); let de = '';
+  if (n >= 0) { const d = new Date(ate + 'T12:00:00'); d.setDate(d.getDate() - n); de = ymd(d); }
+  const a = document.getElementById('dp-de'), b = document.getElementById('dp-ate');
+  if (a) a.value = de; if (b) b.value = ate;
+  if (!silencioso) renderDesempenhoPeriodo();
+}
+function dpBarra(ac, er) {
+  const t = ac + er, pa = t ? ac / t * 100 : 0;
+  return `<div style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--surface2);margin-top:5px"><div style="width:${pa}%;background:var(--green)"></div><div style="width:${t ? 100 - pa : 0}%;background:var(--accent)"></div></div>`;
+}
+function dpTexto(ac, er) {
+  const t = ac + er; if (!t) return '';
+  const pa = Math.round(ac / t * 100);
+  return `<span style="color:var(--green);font-weight:700">${pa}%</span> <span style="color:var(--muted)">(${ac})</span> <span style="color:var(--accent);font-weight:700">${100 - pa}%</span> <span style="color:var(--muted)">(${er})</span>`;
+}
+function dpOrdenar(arr) {
+  const pct = o => (o.ac + o.er) ? o.ac / (o.ac + o.er) : 0;
+  if (dpOrdem === 'fracos') return arr.sort((a, b) => pct(a) - pct(b) || (b.ac + b.er) - (a.ac + a.er));
+  if (dpOrdem === 'fortes') return arr.sort((a, b) => pct(b) - pct(a) || (b.ac + b.er) - (a.ac + a.er));
+  if (dpOrdem === 'nome') return arr.sort((a, b) => a.nome.localeCompare(b.nome, 'pt'));
+  return arr.sort((a, b) => (b.ac + b.er) - (a.ac + a.er));
+}
+function dpToggle(i) {
+  const m = dpMats[i]; if (!m) return;
+  if (dpAbertas.has(m.nome)) dpAbertas.delete(m.nome); else dpAbertas.add(m.nome);
+  renderDesempenhoPeriodo();
+}
+async function renderDesempenhoPeriodo() {
+  const c = dpCard(); if (!c) return;
+  const de = document.getElementById('dp-de').value || '', ate = document.getElementById('dp-ate').value || '9999-12-31';
+  let L = [];
+  try { L = (await lerLog()).filter(r => (!de || r.dia >= de) && r.dia <= ate); } catch (e) { L = []; }
+  const porMat = new Map();
+  for (const r of L) {
+    const nome = (r.materia || 'Sem matéria').trim();
+    let o = porMat.get(nome); if (!o) { o = { nome, ac: 0, er: 0, subs: new Map() }; porMat.set(nome, o); }
+    const ok = dpAcertou(r); if (ok) o.ac++; else o.er++;
+    const sn = (r.subtema || '—').trim(); const so = o.subs.get(sn) || { nome: sn, ac: 0, er: 0 };
+    if (ok) so.ac++; else so.er++; o.subs.set(sn, so);
+  }
+  const tot = L.length, ac = L.filter(dpAcertou).length, er = tot - ac, dias = new Set(L.map(r => r.dia)).size;
+  const tile = (v, rot, cor) => `<div class="stat-tile" style="padding:14px"><div class="stat-tile-num" style="font-size:26px${cor ? ';color:' + cor : ''}">${v}</div><div class="stat-tile-label">${rot}</div></div>`;
+  document.getElementById('dp-resumo').innerHTML = tot
+    ? tile(tot, 'Resolvidas') + tile(ac, 'Acertos', 'var(--green)') + tile(er, 'Erros', 'var(--accent)') + tile(Math.round(ac / tot * 100) + '%', 'Aproveitamento') + tile(porMat.size, 'Disciplinas') + tile(dias, 'Dias com estudo')
+    : '';
+  dpMats = dpOrdenar([...porMat.values()]);
+  const lista = document.getElementById('dp-lista');
+  if (!tot) { lista.innerHTML = '<div style="color:var(--muted);font-size:13px">Nenhuma resposta registrada neste período.</div>'; return; }
+  lista.innerHTML = dpMats.map((m, i) => {
+    const aberta = dpAbertas.has(m.nome);
+    const subs = aberta ? dpOrdenar([...m.subs.values()]).map(s => `<div style="padding:7px 0 7px 22px;border-top:1px dashed var(--border)">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px"><span style="color:var(--ink2);flex:1;min-width:160px">${esc(s.nome)}</span><span style="white-space:nowrap"><span style="color:var(--muted);margin-right:8px">${s.ac + s.er}</span>${dpTexto(s.ac, s.er)}</span></div>${dpBarra(s.ac, s.er)}</div>`).join('') : '';
+    return `<div style="padding:10px 0;border-top:1px solid var(--border)">
+      <div onclick="dpToggle(${i})" style="cursor:pointer">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:13px"><span style="font-weight:600;color:var(--ink);flex:1;min-width:160px">${aberta ? '▾' : '▸'} ${esc(m.nome)}</span><span style="white-space:nowrap"><span style="color:var(--muted);margin-right:8px">${m.ac + m.er} resolvidas</span>${dpTexto(m.ac, m.er)}</span></div>
+        ${dpBarra(m.ac, m.er)}
+      </div>${subs}</div>`;
+  }).join('');
+}
