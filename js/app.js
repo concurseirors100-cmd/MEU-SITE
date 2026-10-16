@@ -2814,8 +2814,19 @@ function fatorAssuntoFiscal(q){
   // histórico de prova, e o bônus de reforma existe justamente para puxá-los.
   return (q.fonte==='tec'&&!ehReformaTributaria(q))?FATOR_FORA_DO_PERFIL:1;
 }
+// ===== REFORMA: NÚCLEO × PARTES ADMINISTRATIVAS E DE TRANSIÇÃO (16/10) =====
+// O ×2,0 valia igual para tudo da reforma e, somado ao ×1,3 de prova fiscal recente e ao
+// mapa fiscal, levava detalhes como Comitê Gestor e avaliação quinquenal a ×3,1, na frente
+// do núcleo do CTN. Decisão do Anderson em 16/10: ×2,0 só no núcleo (EC 132, incidência,
+// fato gerador, base, alíquotas, não cumulatividade, ZFM); ×1,3 nas partes administrativas
+// e de transição. Assunto que cita ZFM/ALC continua no núcleo mesmo falando de transição.
+const BONUS_REFORMA_ADM=1.3;
+const RE_REFORMA_ADM=/Comit[êe] Gestor|CGIBS|Avalia[çc][ãa]o [Qq]uinquenal|Compensa[çc][ãa]o de Eventual Redu|[Tt]ransi[çc][ãa]o|Fundo|Harmoniza[çc][ãa]o|[Ff]iscaliza[çc][ãa]o|Normas Processuais|Literalidade|Contexto temporal|compras governamentais|turista|Concursos de Progn|Arranjos de Pagamento|Operacionaliza[çc][ãa]o|Temas correlatos/;
+const RE_REFORMA_ZFM=/ZFM|Zona Franca|\bALCs?\b|[ÁA]reas? de Livre Com/;
+function ehReformaAdministrativa(q){const s=q.subtema||'';return RE_REFORMA_ADM.test(s)&&!RE_REFORMA_ZFM.test(s);}
 function bonusTendencia(q){
-  return (ehProvaFiscalRecente(q)?BONUS_PROVA_FISCAL_RECENTE:1)*(ehReformaTributaria(q)?BONUS_REFORMA:1)*fatorAssuntoFiscal(q);
+  const ref=ehReformaTributaria(q)?(ehReformaAdministrativa(q)?BONUS_REFORMA_ADM:BONUS_REFORMA):1;
+  return (ehProvaFiscalRecente(q)?BONUS_PROVA_FISCAL_RECENTE:1)*ref*fatorAssuntoFiscal(q);
 }
 const BONUS_FAVORITA_MAX=0.12;
 function calcScore(q,statsMap){
