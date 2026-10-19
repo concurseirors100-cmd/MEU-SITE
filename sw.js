@@ -6,7 +6,7 @@
 const CACHE = 'questia-v1';
 const ESSENCIAIS = [
   './', './index.html', './css/style.css',
-  './js/app.js', './js/calculadora-revisao.js', './js/dashboard.js', './js/formulas.js',
+  './js/caixinhas.js', './js/app.js', './js/calculadora-revisao.js', './js/dashboard.js', './js/formulas.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'
 ];
 const EXTERNOS_OK = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdnjs.cloudflare.com'];
