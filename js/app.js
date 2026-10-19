@@ -1666,7 +1666,11 @@ function escolherIrmas(limite,statsMap,excluir){
       if(out.length>=limite)break;
       const err=histResp.dividas.get(k).errados;
       const cand=porAssunto.get(k).filter(q=>!usados.has(q.id)&&!err.has(q.id)&&!ultimaFoiErro(q)&&!ehLeech(q)&&!consolidadaAteProva(q)&&!((histResp.ultimoTs.get(q.id)||0)>recente));
-      const pick=cand.find(ehNovaTec)||cand.find(semResposta)||cand.sort((a,b)=>(histResp.ultimoTs.get(a.id)||0)-(histResp.ultimoTs.get(b.id)||0))[0];
+      // Caixinhas: a irmã sai, se possível, da MESMA forma de cobrança da questão errada.
+      const cxErr=cxDisponivel()?new Set([...err].map(cxIdDoId).filter(x=>x!==undefined)):new Set();
+      const mesmaForma=cxErr.size?cand.filter(q=>cxErr.has(cxIdDe(q))):[];
+      const escolher=lst=>lst.find(ehNovaTec)||lst.find(semResposta)||lst.slice().sort((a,b)=>(histResp.ultimoTs.get(a.id)||0)-(histResp.ultimoTs.get(b.id)||0))[0];
+      const pick=(mesmaForma.length?escolher(mesmaForma):null)||escolher(cand);
       if(pick){out.push(pick);usados.add(pick.id);}
     }
     if(!algum)break;
@@ -1724,7 +1728,7 @@ function ordenarNovasPorDeficit(arr,statsMap,jaNaFila){
   });
   const porDisc=new Map();
   arr.forEach(q=>{const d=disciplinaDaMateria(q.materia);if(!porDisc.has(d))porDisc.set(d,[]);porDisc.get(d).push(q);});
-  const filas=new Map();porDisc.forEach((lista,d)=>filas.set(d,ordenarFila(lista,statsMap)));
+  const filas=new Map();porDisc.forEach((lista,d)=>filas.set(d,ordenarFila(lista,statsMap,true)));
   const meta={};filas.forEach((_,d)=>meta[d]=metaDaDisciplina(d,ac[d],er[d]));
   const serv={...lerServidasNovas().porDisc};
   // inéditas que já entraram na fila de hoje por outro caminho contam como servidas,
@@ -1774,7 +1778,7 @@ function embaralharDoDia(arr){
   const h=x=>{const t=dia+'|'+x;let v=0x811c9dc5;for(let i=0;i<t.length;i++){v^=t.charCodeAt(i);v=Math.imul(v,0x01000193)>>>0;}return v;};
   return arr.map(q=>({q,k:h(q.id)})).sort((a,b)=>a.k-b.k).map(o=>o.q);
 }
-function ordenarFila(arr,statsMap){
+function ordenarFila(arr,statsMap,porCaixinha){
   statsMap=statsMap||estatisticasPorAssunto();
   const scored=embaralharDoDia(arr).map(q=>({q,s:calcScore(q,statsMap)}));
   const grupos=new Map();
@@ -1784,6 +1788,9 @@ function ordenarFila(arr,statsMap){
     grupos.get(k).push(item);
   });
   grupos.forEach(g=>g.sort((a,b)=>b.s-a.s)); // maior score primeiro, dentro de cada grupo
+  // Caixinhas (formas de cobrança): só nas inéditas. Dentro do assunto, uma questão de
+  // cada forma antes de repetir forma; formas já dominadas vão para o fim do assunto.
+  if(porCaixinha&&cxDisponivel()){const est=cxEstado();grupos.forEach((g,k)=>grupos.set(k,reordenarPorCaixinha(g,est)));}
   const out=[];
   // Rodízio com MEMÓRIA DE MATÉRIA, não de grupo.
   //
@@ -3474,7 +3481,7 @@ async function renderMistura(){
       <div style="flex:0 0 58px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${n} · ${Math.round(n/seq.length*100)}%</div>
     </div>`).join('')}`;
 }
-function renderStats(){renderDesempenhoPeriodo();renderSubtemas();renderMistura();const ac=questions.reduce((a,q)=>a+(q.acertos||0),0),er=questions.reduce((a,q)=>a+(q.erros||0),0),pct=(ac+er)>0?Math.round(ac/(ac+er)*100):null;document.getElementById('st-total').textContent=questions.length;document.getElementById('st-ac').textContent=ac;document.getElementById('st-er').textContent=er;document.getElementById('st-pct').textContent=pct!==null?pct+'%':'—';const byMat={};questions.forEach(q=>{const m=q.materia||'Sem matéria';if(!byMat[m])byMat[m]={ac:0,er:0,tot:0};byMat[m].ac+=q.acertos||0;byMat[m].er+=q.erros||0;byMat[m].tot++;});const mxT=Math.max(...Object.values(byMat).map(v=>v.ac+v.er),1);document.getElementById('mat-chart').innerHTML=Object.entries(byMat).sort((a,b)=>b[1].tot-a[1].tot).slice(0,7).map(([nm,v])=>{const t=v.ac+v.er,p=t>0?Math.round(v.ac/t*100):0,w=t>0?Math.round(t/mxT*100):5;return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${nm}</span><span class="mat-pct">${t>0?p+'%':v.tot+' q'}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const mxCount=Math.max(...Object.values(byMat).map(v=>v.tot),1);document.getElementById('mat-count-chart').innerHTML=Object.entries(byMat).sort((a,b)=>a[1].tot-b[1].tot).map(([nm,v])=>{const w=Math.round(v.tot/mxCount*100);return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${esc(nm)}</span><span class="mat-pct">${v.tot} q</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%;background:var(--accent2)"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const byBan={};questions.forEach(q=>{const b=q.banca||'Outras';byBan[b]=(byBan[b]||0)+1;});const sorted=Object.entries(byBan).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=Math.max(...sorted.map(([,v])=>v),1),cols=['var(--accent)','var(--accent2)','var(--green)','var(--yellow)','#8b5cf6','#ec4899'];document.getElementById('banca-chart').innerHTML=sorted.map(([nm,cnt],i)=>`<div class="bar-g"><div class="bar-v">${cnt}</div><div class="bar-b" style="height:${Math.round(cnt/mx*100)}%;background:${cols[i%cols.length]}"></div><div class="bar-l">${nm.substring(0,7)}</div></div>`).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';}
+function renderStats(){renderDesempenhoPeriodo();renderFormasCobranca();renderSubtemas();renderMistura();const ac=questions.reduce((a,q)=>a+(q.acertos||0),0),er=questions.reduce((a,q)=>a+(q.erros||0),0),pct=(ac+er)>0?Math.round(ac/(ac+er)*100):null;document.getElementById('st-total').textContent=questions.length;document.getElementById('st-ac').textContent=ac;document.getElementById('st-er').textContent=er;document.getElementById('st-pct').textContent=pct!==null?pct+'%':'—';const byMat={};questions.forEach(q=>{const m=q.materia||'Sem matéria';if(!byMat[m])byMat[m]={ac:0,er:0,tot:0};byMat[m].ac+=q.acertos||0;byMat[m].er+=q.erros||0;byMat[m].tot++;});const mxT=Math.max(...Object.values(byMat).map(v=>v.ac+v.er),1);document.getElementById('mat-chart').innerHTML=Object.entries(byMat).sort((a,b)=>b[1].tot-a[1].tot).slice(0,7).map(([nm,v])=>{const t=v.ac+v.er,p=t>0?Math.round(v.ac/t*100):0,w=t>0?Math.round(t/mxT*100):5;return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${nm}</span><span class="mat-pct">${t>0?p+'%':v.tot+' q'}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const mxCount=Math.max(...Object.values(byMat).map(v=>v.tot),1);document.getElementById('mat-count-chart').innerHTML=Object.entries(byMat).sort((a,b)=>a[1].tot-b[1].tot).map(([nm,v])=>{const w=Math.round(v.tot/mxCount*100);return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${esc(nm)}</span><span class="mat-pct">${v.tot} q</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%;background:var(--accent2)"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const byBan={};questions.forEach(q=>{const b=q.banca||'Outras';byBan[b]=(byBan[b]||0)+1;});const sorted=Object.entries(byBan).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=Math.max(...sorted.map(([,v])=>v),1),cols=['var(--accent)','var(--accent2)','var(--green)','var(--yellow)','#8b5cf6','#ec4899'];document.getElementById('banca-chart').innerHTML=sorted.map(([nm,cnt],i)=>`<div class="bar-g"><div class="bar-v">${cnt}</div><div class="bar-b" style="height:${Math.round(cnt/mx*100)}%;background:${cols[i%cols.length]}"></div><div class="bar-l">${nm.substring(0,7)}</div></div>`).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';}
 
 // BACKUP — EXPORTAR
 // ===== BACKUP COMPLETO =====
@@ -6579,4 +6586,102 @@ async function renderDesempenhoPeriodo() {
         ${dpBarra(m.ac, m.er)}
       </div>${subs}</div>`;
   }).join('');
+}
+
+
+// ===== CAIXINHAS (FORMAS DE COBRANÇA) =====
+// Pedido do Anderson (18/10), inspirado na consultoria da SEFAZ-CE: dentro de cada
+// assunto, as questões que exigem o MESMO conhecimento ficam na mesma "caixinha".
+// Fazendo 1–2 de cada caixinha você passa por todas as formas de cobrança do assunto,
+// em vez de repetir sempre o mesmo padrão.
+//
+// O que isto NÃO muda: quanto de cada disciplina/assunto entra por dia (peso do edital,
+// taxa de erro, atraso, tendência, cota de inéditas) e as datas do SM-2. O que muda:
+//   · inéditas: dentro do assunto, revezamento por caixinha; caixinha com erro em aberto
+//     primeiro, depois as nunca vistas, depois as vistas (as de mais erro antes);
+//     caixinha DOMINADA (2 acertos em questões diferentes, sem erro em aberto) vai para o
+//     fim do assunto — nada é suspenso;
+//   · irmãs depois de um erro: saem da mesma caixinha quando houver;
+//   · Estatísticas: quadro de acerto por forma de cobrança.
+// Os dados ficam em js/caixinhas.js (mesmo arquivo no PC e no iPad). Questão sem
+// caixinha se comporta exatamente como antes.
+function cxDisponivel(){return !!(window.CAIXINHAS&&window.CAIXINHAS.q&&window.CAIXINHAS.cx);}
+function cxIdDoId(id){return cxDisponivel()?window.CAIXINHAS.q[String(id)]:undefined;}
+function cxIdDe(q){return q?cxIdDoId(q.id):undefined;}
+function cxInfo(i){const c=cxDisponivel()?window.CAIXINHAS.cx[i]:null;return c?{materia:c[0],subtema:c[1],cod:c[2],nome:c[3]}:null;}
+// Estado de cada caixinha a partir dos contadores das questões (uma passada no banco).
+function cxEstado(){
+  const est=new Map();
+  if(!cxDisponivel())return est;
+  for(const q of questions){
+    const i=cxIdDe(q);if(i===undefined)continue;
+    let e=est.get(i);if(!e){e={ac:0,er:0,vistas:0,dominadas:0,erroAberto:false,total:0};est.set(i,e);}
+    e.total++;
+    if(q.suspensa)continue;
+    const ac=q.acertos||0,er=q.erros||0;
+    e.ac+=ac;e.er+=er;
+    if(ac+er>0){
+      e.vistas++;
+      const errouPorUltimo=ultimaFoiErro(q);
+      if(errouPorUltimo)e.erroAberto=true;else if(ac>0)e.dominadas++;
+    }
+  }
+  est.forEach(e=>{e.dominada=e.dominadas>=2&&!e.erroAberto;e.taxa=taxaErroAjustada(e.ac,e.er);});
+  return est;
+}
+// g: itens {q,s} de UM assunto, já em ordem de score. Devolve a nova ordem.
+function reordenarPorCaixinha(g,est){
+  if(g.length<2)return g;
+  const baldes=new Map();
+  g.forEach(it=>{
+    const i=cxIdDe(it.q);const k=i===undefined?'q:'+it.q.id:'c:'+i;
+    if(!baldes.has(k))baldes.set(k,{k,i,itens:[]});
+    baldes.get(k).itens.push(it);
+  });
+  if(baldes.size===g.length)return g; // nenhuma caixinha repetida: ordem original
+  const nivel=b=>{
+    if(b.i===undefined)return 1;
+    const e=est.get(b.i);if(!e)return 1;
+    if(e.erroAberto)return 0;      // reforço onde você errou
+    if(e.dominada)return 3;        // já dominada: fim do assunto
+    return e.vistas?2:1;           // nunca vista antes da já vista
+  };
+  const lista=[...baldes.values()].map(b=>({...b,n:nivel(b),t:b.i===undefined?0.5:(est.get(b.i)?.taxa??0.5),top:b.itens[0].s}));
+  lista.sort((a,b)=>a.n-b.n||(a.n===2?b.t-a.t:0)||b.top-a.top);
+  const ativos=lista.filter(b=>b.n<3),fim=lista.filter(b=>b.n===3);
+  const out=[];
+  const rodar=bs=>{for(let r=0;;r++){let algum=false;for(const b of bs){if(r<b.itens.length){out.push(b.itens[r]);algum=true;}}if(!algum)break;}};
+  rodar(ativos);rodar(fim);
+  return out;
+}
+// Quadro nas Estatísticas: cobertura e acerto por forma de cobrança.
+let fcFiltro='';
+function renderFormasCobranca(){
+  if(!cxDisponivel())return;
+  const pg=document.getElementById('page-stats');const body=pg&&pg.querySelector('.page-body');if(!body)return;
+  let c=document.getElementById('fc-card');
+  if(!c){
+    c=document.createElement('div');c.id='fc-card';c.className='card';c.style.cssText='padding:24px;margin-bottom:24px';
+    const dp=document.getElementById('dp-card');
+    body.insertBefore(c,dp?dp.nextSibling:(body.children[1]||null));
+  }
+  const est=cxEstado();
+  const porMat=new Map();
+  est.forEach((e,i)=>{const inf=cxInfo(i);if(!inf)return;const m=inf.materia;if(!porMat.has(m))porMat.set(m,{tot:0,vistas:0,dom:0});const o=porMat.get(m);o.tot++;if(e.vistas)o.vistas++;if(e.dominada)o.dom++;});
+  const mats=[...porMat.keys()].sort((a,b)=>a.localeCompare(b,'pt'));
+  if(fcFiltro&&!porMat.has(fcFiltro))fcFiltro='';
+  const fracas=[];
+  est.forEach((e,i)=>{const inf=cxInfo(i);if(!inf||(fcFiltro&&inf.materia!==fcFiltro))return;const t=e.ac+e.er;if(t<2)return;fracas.push({inf,e,t,p:e.ac/t});});
+  fracas.sort((a,b)=>a.p-b.p||b.t-a.t);
+  const sel="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;font-family:'Outfit',sans-serif;font-size:12px;color:var(--ink);outline:none;cursor:pointer";
+  const cob=(fcFiltro?[fcFiltro]:mats).map(m=>{const o=porMat.get(m);const pv=Math.round(o.vistas/o.tot*100);
+    return `<div style="padding:7px 0;border-top:1px dashed var(--border)"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px"><span style="color:var(--ink2);flex:1;min-width:160px">${esc(m)}</span><span style="white-space:nowrap;color:var(--muted)">${o.vistas} de ${o.tot} formas vistas · ${o.dom} dominadas</span></div><div style="display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--surface2);margin-top:5px"><div style="width:${pv}%;background:var(--accent2)"></div></div></div>`;}).join('');
+  const lista=fracas.slice(0,25).map(x=>`<div style="padding:7px 0;border-top:1px dashed var(--border)"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px"><span style="color:var(--ink);flex:1;min-width:180px">${esc(x.inf.nome)}<br><span style="color:var(--muted);font-size:11px">${esc(x.inf.materia)} › ${esc(x.inf.subtema)}</span></span><span style="white-space:nowrap">${dpTexto(x.e.ac,x.e.er)}</span></div>${dpBarra(x.e.ac,x.e.er)}</div>`).join('');
+  c.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:12px">
+    <div class="chart-title" style="margin:0">🧩 Formas de cobrança (caixinhas)</div>
+    <select style="${sel}" onchange="fcFiltro=this.value;renderFormasCobranca()"><option value="">Todas as disciplinas com caixinhas</option>${mats.map(m=>`<option value="${esc(m)}" ${m===fcFiltro?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Cobertura: quantas formas de cobrança você já viu. "Dominada" = 2 acertos em questões diferentes da mesma forma, sem erro em aberto.</div>
+    ${cob}
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:18px 0 6px">Formas que mais te derrubam (mín. 2 respostas)</div>
+    ${lista||'<div style="color:var(--muted);font-size:13px">Ainda sem respostas suficientes nas caixinhas.</div>'}`;
 }
