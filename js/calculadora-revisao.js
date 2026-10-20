@@ -11,13 +11,16 @@ function toggleCalculadora(){
   p.classList.toggle('show',abrindo);
   if(btn)btn.classList.toggle('ativo',abrindo);
 }
-// Fecha a calculadora sem abrir — chamada ao trocar de questão, pra não ficar
+// Fecha (e zera) a calculadora sem abrir — chamada ao trocar de questão, pra não ficar
 // flutuando um painel de uma conta que já não tem mais nada a ver com o cartão novo.
 function fecharCalculadora(){
   const p=document.getElementById('calc-panel');if(!p)return;
   const btn=document.getElementById('fc-calc-btn');
   p.classList.remove('show');
   if(btn)btn.classList.remove('ativo');
+  // Zera a conta junto: ao reabrir na questão nova, o visor começa do 0, sem
+  // resto da conta da questão anterior.
+  calcClear();
 }
 function calcRenderDisplay(texto){
   document.getElementById('calc-display').textContent=texto||'0';

@@ -1611,11 +1611,11 @@ function aplicarEsperaQualidade(q,quality,r){
 async function carregarHistResp(){
   const L=idbOk?await lerLog():[];
   const porId=new Map(questions.map(q=>[q.id,q]));
-  const ultimaNota=new Map(),ultimoTs=new Map(),recentesPorAssunto=new Map();
+  const ultimaNota=new Map(),ultimoTs=new Map(),primeiroTs=new Map(),recentesPorAssunto=new Map();
   const corte=Date.now()-(QUAL_IRMA_VALIDADE+1)*86400000;
   L.sort((a,b)=>a.ts-b.ts);
   for(const r of L){
-    ultimaNota.set(r.qid,r.nota);ultimoTs.set(r.qid,r.ts);
+    ultimaNota.set(r.qid,r.nota);ultimoTs.set(r.qid,r.ts);if(!primeiroTs.has(r.qid))primeiroTs.set(r.qid,r.ts);
     if(r.ts<corte)continue;
     const q=porId.get(r.qid);
     const k=q?chaveAssunto(q):((r.materia||'—')+'§'+(r.subtema||'—'));
@@ -1637,7 +1637,7 @@ async function carregarHistResp(){
       const d=dividas.get(k);d.n++;d.errados.add(e.qid);
     }
   });
-  histResp={ultimaNota,ultimoTs,dividas};
+  histResp={ultimaNota,ultimoTs,primeiroTs,dividas};
   return histResp;
 }
 function filtroSessao(q){
@@ -1944,6 +1944,29 @@ function aplicarReservaProvaI(fila,elegiveis,teto){
   const nova=intercalar(bloco,mantidas);
   return nova.slice(0,teto||nova.length);
 }
+// ===== LOTE PRIORITÁRIO ATÉ A PROVA (20/10) =====
+// As questões do curso Reta Final (LTM e ZFM de Manaus) entraram no banco a 12 dias
+// da prova. Pela cota normal de inéditas, disputando com milhares de outras, boa parte
+// delas não seria vista antes de 01/11. Aqui elas ganham uma cota PRÓPRIA do dia:
+// o que falta ver ÷ os dias que restam até LOTE_FOLGA_DIAS antes da prova — assim o
+// lote inteiro passa pela tela e ainda sobram dias para as erradas voltarem.
+// A cota do dia é fixa no dia: conta como já servidas as do lote vistas pela 1ª vez hoje,
+// então reabrir a sessão não dobra a dose. O SM-2 das questões não muda em nada.
+const RE_LOTE_PRIORITARIO=/Reta Final ISS Manaus/;
+const LOTE_FOLGA_DIAS=2;
+function ehLotePrioritario(q){return RE_LOTE_PRIORITARIO.test(q.origem||'');}
+function planoLotePrioritario(ehNova){
+  const lote=questions.filter(q=>ehLotePrioritario(q)&&!q.suspensa&&!materiaPausada(q));
+  if(!lote.length)return{pend:0,hoje:0,cota:0,dias:0};
+  const pend=lote.filter(ehNova).length;
+  const inicioHoje=new Date(today()+'T00:00:00').getTime();
+  const pt=histResp&&histResp.primeiroTs;
+  const hoje=pt?lote.filter(q=>(pt.get(q.id)||0)>=inicioHoje).length:0;
+  const n=diasAteProva();
+  const dias=(n===null||n<=0)?1:Math.max(1,n-LOTE_FOLGA_DIAS);
+  const cotaDia=Math.ceil((pend+hoje)/dias);
+  return{pend,hoje,dias,cota:Math.max(0,Math.min(pend,cotaDia-hoje))};
+}
 async function initStudy(){
   renderAvisoReta();renderMateriasPausadas();
   populateEstudarMaterias();
@@ -1967,24 +1990,41 @@ async function initStudy(){
   const idsIrma=new Set(irmas.map(q=>q.id));
   const eleg=elegiveis.filter(q=>!idsIrma.has(q.id));
   let novas=ordenarNovasPorDeficit(eleg.filter(ehNova),statsComTetoFatia(statsMap,TETO_FATIA_NOVAS));
+  const plano=planoLotePrioritario(ehNova);
+  let novasLote=[];
+  if(plano.cota>0){
+    novasLote=ordenarNovasPorDeficit(eleg.filter(q=>ehNova(q)&&ehLotePrioritario(q)),statsComTetoFatia(statsMap,TETO_FATIA_NOVAS)).slice(0,plano.cota);
+    const idsL=new Set(novasLote.map(q=>q.id));
+    novas=novas.filter(q=>!idsL.has(q.id));
+  }
+  const idsLote=new Set(novasLote.map(q=>q.id));
   let velhas=ordenarRevisoes(eleg.filter(q=>!ehNova(q)),statsMap);
   metaEstourada=false;
   let fila;
   if(restaDia!==null){
     const resta=restaDia, nI=irmas.length;
     const cota=Math.round(resta*(cfg.cotaNovas??0.40));
+    // O lote prioritário sai primeiro e consome a cota de inéditas; se passar dela,
+    // o excedente sai das revisões. O resto do dia segue a regra de sempre.
+    const nL=Math.min(novasLote.length,Math.max(0,resta-nI));
+    const restaSemLote=Math.max(0,resta-nI-nL);
     // Cada lado cede o que não usar: sem caderno novo, o dia inteiro vai para revisão;
     // sem atrasado, o dia inteiro vai para o caderno novo. A cota nunca ociosa slots.
     // As irmãs saem da parte de REVISÃO do dia — a cota de inéditas não muda.
-    let qN=Math.min(novas.length,cota);
-    let qV=Math.min(velhas.length,Math.max(0,resta-qN-nI));
-    qN=Math.min(novas.length,Math.max(0,resta-nI-qV));
+    let qN=Math.min(novas.length,Math.max(0,cota-nL));
+    let qV=Math.min(velhas.length,Math.max(0,restaSemLote-qN));
+    qN=Math.min(novas.length,Math.max(0,restaSemLote-qV));
     if(elegiveis.length>resta)metaEstourada=true;
     fila=intercalar(novas.slice(0,qN),velhas.slice(0,qV));
-    fila=aplicarReservaProvaI(fila,eleg,Math.max(0,resta-nI));
+    fila=aplicarReservaProvaI(fila,eleg.filter(q=>!idsLote.has(q.id)),restaSemLote);
+    fila=intercalar(novasLote.slice(0,nL),fila);
     fila=intercalar(irmas,fila);
   }else{
-    fila=intercalar(irmas,intercalar(novas,velhas));
+    fila=intercalar(irmas,intercalar(novasLote,intercalar(novas,velhas)));
+  }
+  if(novasLote.length){
+    const nNaFila=fila.filter(q=>idsLote.has(q.id)).length;
+    if(nNaFila)notify(`🎯 Reta final: ${nNaFila} questão(ões) do curso (LTM/ZFM) na fila de hoje · faltam ${plano.pend} inéditas do lote, a ver em ${plano.dias} dia(s)`,'ok');
   }
   const forcadas=await questoesForcadasPorCobertura();
   const idsJaNaFila=new Set(fila.map(q=>q.id));
