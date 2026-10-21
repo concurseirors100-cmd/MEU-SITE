@@ -752,6 +752,7 @@ function extrairFormulasTec(texto){
 }
 function formatQuestionText(text){
   if(!text)return'';
+  text=String(text).replace(/\r\n?/g,'\n'); // quebra do Windows (\r\n) vinda de alguns arquivos do TEC juntava os parágrafos
   const{texto:semCodigo,blocos:blocosCodigo}=extrairBlocosDeCodigo(text);
   const{texto:comMarcasTbl,tabelas}=extrairTabelasComoHtml(semCodigo);
   const{texto:comFormulas,formulas}=extrairFormulasTec(comMarcasTbl);
@@ -1565,8 +1566,22 @@ const QUAL_IRMA_FRACAO=0.20, QUAL_IRMA_MAX=30;
 let histResp=null;   // recarregado a cada montagem de fila a partir do registro de respostas
 const chaveAssunto=q=>(q.materia||'—').trim()+'§'+(q.subtema||'—').trim();
 function ehLeech(q){return (q.erros||0)>=(schedCfg().leechLimite||5);}
+// ===== LTM e ZFM: ACERTOU, SAI DA FILA ATÉ A PROVA (21/10, decisão do Anderson) =====
+// Com 11 dias até a prova e o banco de LTM/ZFM grande demais para rever tudo, a
+// questão dessas matérias cuja ÚLTIMA resposta foi Bom, Fácil ou Dominada sai da fila
+// até a prova. Errei ou Difícil continuam no agendamento normal (SM-2 + espera do erro).
+// A nota fica gravada na questão (ultimaNota); para respostas anteriores a este campo,
+// vem do registro de respostas. Passada a data da prova, volta tudo ao normal.
+const MATERIAS_SAI_AO_ACERTAR=new Set(['LTM (Manaus)','Legislação Tributária dos Municípios','Direito Tributário Municipal','Zona Franca de Manaus']);
+function saiAoAcertar(q){
+  if(!MATERIAS_SAI_AO_ACERTAR.has((q.materia||'').trim()))return false;
+  let nota=q.ultimaNota;
+  if((nota===undefined||nota===null)&&histResp&&histResp.ultimaNota.has(q.id))nota=histResp.ultimaNota.get(q.id);
+  return typeof nota==='number'&&nota>=2;
+}
 function consolidadaAteProva(q){
   const n=diasAteProva(); if(n===null||n<=0)return false;
+  if(saiAoAcertar(q))return true;
   if(q.erros||0)return false;
   return (q.acertos||0)>=2;   // 2 acertos e nenhum erro: sai da fila até a prova (decisão do Anderson em 08/10; sem espaçamento mínimo)
 }
@@ -1973,6 +1988,7 @@ async function initStudy(){
   populateEstudarSubtemas();
   sessOk=0;sessErr=0;ratingLock=false;
   const cfg=schedCfg();
+  await carregarHistResp(); // antes do filtro: saiAoAcertar() usa a última nota do registro
   const elegiveis=questions.filter(naSessao);
   // O rodízio de ordenarFila reparte o dia entre GRUPOS (matéria§subtema), não entre
   // questões. Um banco antigo espalhado por 30 matérias ocupa dezenas de grupos; um
@@ -1983,7 +1999,6 @@ async function initStudy(){
   const ehNova=q=>(q.fonte==='tec')&&!(q.acertos||0)&&!(q.erros||0)&&!(q.reps||0);
   const statsMap=estatisticasPorAssunto(); // uma vez só por sessão, reaproveitado nas duas listas abaixo
   // Inéditas usam a fatia COM TETO; revisões seguem com o mapa original, intocado.
-  await carregarHistResp();
   const restaDia=(cfg.limiteDiario>0&&!ignorarLimite)?Math.max(0,cfg.limiteDiario-respondidasHoje()):null;
   const limIrmas=restaDia===null?QUAL_IRMA_MAX:Math.min(QUAL_IRMA_MAX,Math.round(restaDia*QUAL_IRMA_FRACAO));
   const irmas=escolherIrmas(limIrmas,statsMap);
@@ -2347,6 +2362,7 @@ function rate(quality){
   if(quality>0)registrarAcertoFirme(questions[ri]);
   if(quality===0){questions[ri].erros++;sessErr++;}else{questions[ri].acertos++;sessOk++;}
   questions[ri].ultimaErrada=(quality===0);
+  questions[ri].ultimaNota=quality;
   if(eraNova)registrarNovaServida(questions[ri]);   // alimenta a fila de inéditas por déficit
   // Mostrar feedback de intervalo usando o intervalo real calculado pelo SM-2
   const dias=r.espera||r.interval;
@@ -3604,7 +3620,7 @@ async function reconciliarHistComLog(){
 // Campos de estudo de uma questão (agendamento e contadores). Na mesclagem, uma
 // questão que existe nos dois lados fica com o estado do lado que a respondeu por
 // último — o conteúdo (enunciado, gabarito corrigido) continua o deste navegador.
-const CAMPOS_ESTUDO=['reps','ef','interval','nextDue','ultimaErrada','refAcerto','firmeOk','consolidada','suspensa','favorita'];
+const CAMPOS_ESTUDO=['reps','ef','interval','nextDue','ultimaErrada','ultimaNota','refAcerto','firmeOk','consolidada','suspensa','favorita'];
 async function atualizarProgressoMesclado(importadas,respostasImp){
   if(!idbOk||!Array.isArray(respostasImp)||!respostasImp.length)return 0;
   const ultimo=arr=>{const m=new Map();arr.forEach(r=>{if(r&&typeof r.ts==='number'&&(m.get(r.qid)||0)<r.ts)m.set(r.qid,r.ts);});return m;};
