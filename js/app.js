@@ -1970,6 +1970,29 @@ function aplicarReservaProvaI(fila,elegiveis,teto){
 const RE_LOTE_PRIORITARIO=/Reta Final ISS Manaus/;
 const LOTE_FOLGA_DIAS=2;
 function ehLotePrioritario(q){return RE_LOTE_PRIORITARIO.test(q.origem||'');}
+// Dentro do lote (24/10, decisão do Anderson): com ~500 inéditas e 6 dias, não dá para ver
+// todas. Cada questão do curso ganhou uma "caixinha" de prioridade (q.cxLote), dada pelo
+// que ela cobra: 1 = núcleo fiscal (incidência, base, alíquota, sujeito passivo, isenção,
+// lançamento, multas, benefícios da ZFM); 2 = procedimento e prazos; 3 = organização
+// (CARF-M, Suframa, cadastro). A fila serve a 1 antes da 2, e a 2 antes da 3 — todos os
+// assuntos continuam aparecendo desde já, pela parte com mais cara de fiscal. Dentro da 1,
+// ISS, IPTU, ITBI e ZFM saem 2 para cada 1 dos demais assuntos de LTM.
+const RE_LTM_PESO_ALTO=/ISS|Imposto sobre Servi|uniprofissional|IPTU|Imposto Imobili|Predial|ITBI|Transmiss/i;
+function pesoAltoLote(q){return (q.materia||'').trim()==='Zona Franca de Manaus'||RE_LTM_PESO_ALTO.test(q.subtema||'');}
+function caixinhaLote(q){return [1,2,3].includes(q.cxLote)?q.cxLote:1;}
+function ordenarLotePorCaixinha(lista,stL){
+  const out=[];
+  [1,2,3].forEach(cx=>{
+    const g=lista.filter(q=>caixinhaLote(q)===cx);
+    const A=ordenarNovasPorDeficit(g.filter(pesoAltoLote),stL), B=ordenarNovasPorDeficit(g.filter(q=>!pesoAltoLote(q)),stL);
+    let i=0,j=0;
+    while(i<A.length||j<B.length){
+      for(let t=0;t<2&&i<A.length;t++)out.push(A[i++]);
+      if(j<B.length)out.push(B[j++]);
+    }
+  });
+  return out;
+}
 function planoLotePrioritario(ehNova){
   const lote=questions.filter(q=>ehLotePrioritario(q)&&!q.suspensa&&!materiaPausada(q));
   if(!lote.length)return{pend:0,hoje:0,cota:0,dias:0};
@@ -2008,7 +2031,8 @@ async function initStudy(){
   const plano=planoLotePrioritario(ehNova);
   let novasLote=[];
   if(plano.cota>0){
-    novasLote=ordenarNovasPorDeficit(eleg.filter(q=>ehNova(q)&&ehLotePrioritario(q)),statsComTetoFatia(statsMap,TETO_FATIA_NOVAS)).slice(0,plano.cota);
+    const doLote=eleg.filter(q=>ehNova(q)&&ehLotePrioritario(q)), stL=statsComTetoFatia(statsMap,TETO_FATIA_NOVAS);
+    novasLote=ordenarLotePorCaixinha(doLote,stL).slice(0,plano.cota);
     const idsL=new Set(novasLote.map(q=>q.id));
     novas=novas.filter(q=>!idsL.has(q.id));
   }
