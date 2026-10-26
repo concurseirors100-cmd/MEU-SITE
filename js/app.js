@@ -1573,8 +1573,12 @@ function ehLeech(q){return (q.erros||0)>=(schedCfg().leechLimite||5);}
 // A nota fica gravada na questão (ultimaNota); para respostas anteriores a este campo,
 // vem do registro de respostas. Passada a data da prova, volta tudo ao normal.
 const MATERIAS_SAI_AO_ACERTAR=new Set(['LTM (Manaus)','Legislação Tributária dos Municípios','Direito Tributário Municipal','Zona Franca de Manaus']);
+// 26/10 (decisão do Anderson): a regra passou a valer para TODAS as matérias. A 6 dias da
+// prova, revisão de questão já acertada tomava a fatia do dia que devia ir para inéditas;
+// agora só voltam antes da prova as que ficaram com Errei ou Difícil na última resposta.
+const SAI_AO_ACERTAR_TODAS=true;
 function saiAoAcertar(q){
-  if(!MATERIAS_SAI_AO_ACERTAR.has((q.materia||'').trim()))return false;
+  if(!SAI_AO_ACERTAR_TODAS&&!MATERIAS_SAI_AO_ACERTAR.has((q.materia||'').trim()))return false;
   let nota=q.ultimaNota;
   if((nota===undefined||nota===null)&&histResp&&histResp.ultimaNota.has(q.id))nota=histResp.ultimaNota.get(q.id);
   return typeof nota==='number'&&nota>=2;
