@@ -1572,12 +1572,23 @@ function ehLeech(q){return (q.erros||0)>=(schedCfg().leechLimite||5);}
 // até a prova. Errei ou Difícil continuam no agendamento normal (SM-2 + espera do erro).
 // A nota fica gravada na questão (ultimaNota); para respostas anteriores a este campo,
 // vem do registro de respostas. Passada a data da prova, volta tudo ao normal.
+// ===== INTERRUPTOR: REGRAS DA RETA FINAL DO ISS MANAUS (prova em 01/11/2026) =====
+// Desligado em 04/11 a pedido do Anderson: as regras abaixo foram criadas só para aquela
+// prova. Com o interruptor em false:
+//   · "acertou, sai da fila até a prova" (todas as matérias, ou LTM/ZFM) não vale;
+//   · o lote prioritário do curso Reta Final ISS Manaus não tem cota própria;
+//   · "dois acertos sem erro tiram da fila" volta à regra original, com os dois acertos
+//     separados por pelo menos QUAL_1ACERTO_ESPACO dias (sem isso, dois acertos no mesmo
+//     dia — ainda com a resposta fresca — tiravam a questão da revisão).
+// Para reativar numa reta final parecida, ponha true.
+const REGRAS_RETA_FINAL_ISS_MANAUS=false;
 const MATERIAS_SAI_AO_ACERTAR=new Set(['LTM (Manaus)','Legislação Tributária dos Municípios','Direito Tributário Municipal','Zona Franca de Manaus']);
 // 26/10 (decisão do Anderson): a regra passou a valer para TODAS as matérias. A 6 dias da
 // prova, revisão de questão já acertada tomava a fatia do dia que devia ir para inéditas;
 // agora só voltam antes da prova as que ficaram com Errei ou Difícil na última resposta.
 const SAI_AO_ACERTAR_TODAS=true;
 function saiAoAcertar(q){
+  if(!REGRAS_RETA_FINAL_ISS_MANAUS)return false;
   if(!SAI_AO_ACERTAR_TODAS&&!MATERIAS_SAI_AO_ACERTAR.has((q.materia||'').trim()))return false;
   let nota=q.ultimaNota;
   if((nota===undefined||nota===null)&&histResp&&histResp.ultimaNota.has(q.id))nota=histResp.ultimaNota.get(q.id);
@@ -1587,7 +1598,9 @@ function consolidadaAteProva(q){
   const n=diasAteProva(); if(n===null||n<=0)return false;
   if(saiAoAcertar(q))return true;
   if(q.erros||0)return false;
-  return (q.acertos||0)>=2;   // 2 acertos e nenhum erro: sai da fila até a prova (decisão do Anderson em 08/10; sem espaçamento mínimo)
+  if(REGRAS_RETA_FINAL_ISS_MANAUS)return (q.acertos||0)>=2;   // reta final de Manaus: 2 acertos e nenhum erro bastam (decisão de 08/10)
+  if(q.firmeOk!==undefined)return q.firmeOk===true;              // regra original: 2 acertos com QUAL_1ACERTO_ESPACO dias de distância
+  return q.refAcerto===undefined&&(q.acertos||0)>=2;              // legado (antes de 26/09)
 }
 // Chamado em rate() num ACERTO, antes de acertos/erros mudarem.
 function registrarAcertoFirme(q){
@@ -1973,7 +1986,7 @@ function aplicarReservaProvaI(fila,elegiveis,teto){
 // então reabrir a sessão não dobra a dose. O SM-2 das questões não muda em nada.
 const RE_LOTE_PRIORITARIO=/Reta Final ISS Manaus/;
 const LOTE_FOLGA_DIAS=2;
-function ehLotePrioritario(q){return RE_LOTE_PRIORITARIO.test(q.origem||'');}
+function ehLotePrioritario(q){return REGRAS_RETA_FINAL_ISS_MANAUS&&RE_LOTE_PRIORITARIO.test(q.origem||'');}
 // Dentro do lote (24/10, decisão do Anderson): com ~500 inéditas e 6 dias, não dá para ver
 // todas. Cada questão do curso ganhou uma "caixinha" de prioridade (q.cxLote), dada pelo
 // que ela cobra: 1 = núcleo fiscal (incidência, base, alíquota, sujeito passivo, isenção,
@@ -3568,7 +3581,7 @@ async function renderMistura(){
       <div style="flex:0 0 58px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">${n} · ${Math.round(n/seq.length*100)}%</div>
     </div>`).join('')}`;
 }
-function renderStats(){renderDesempenhoPeriodo();renderFormasCobranca();renderSubtemas();renderMistura();const ac=questions.reduce((a,q)=>a+(q.acertos||0),0),er=questions.reduce((a,q)=>a+(q.erros||0),0),pct=(ac+er)>0?Math.round(ac/(ac+er)*100):null;document.getElementById('st-total').textContent=questions.length;document.getElementById('st-ac').textContent=ac;document.getElementById('st-er').textContent=er;document.getElementById('st-pct').textContent=pct!==null?pct+'%':'—';const byMat={};questions.forEach(q=>{const m=q.materia||'Sem matéria';if(!byMat[m])byMat[m]={ac:0,er:0,tot:0};byMat[m].ac+=q.acertos||0;byMat[m].er+=q.erros||0;byMat[m].tot++;});const mxT=Math.max(...Object.values(byMat).map(v=>v.ac+v.er),1);document.getElementById('mat-chart').innerHTML=Object.entries(byMat).sort((a,b)=>b[1].tot-a[1].tot).slice(0,7).map(([nm,v])=>{const t=v.ac+v.er,p=t>0?Math.round(v.ac/t*100):0,w=t>0?Math.round(t/mxT*100):5;return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${nm}</span><span class="mat-pct">${t>0?p+'%':v.tot+' q'}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const mxCount=Math.max(...Object.values(byMat).map(v=>v.tot),1);document.getElementById('mat-count-chart').innerHTML=Object.entries(byMat).sort((a,b)=>a[1].tot-b[1].tot).map(([nm,v])=>{const w=Math.round(v.tot/mxCount*100);return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${esc(nm)}</span><span class="mat-pct">${v.tot} q</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%;background:var(--accent2)"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const byBan={};questions.forEach(q=>{const b=q.banca||'Outras';byBan[b]=(byBan[b]||0)+1;});const sorted=Object.entries(byBan).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=Math.max(...sorted.map(([,v])=>v),1),cols=['var(--accent)','var(--accent2)','var(--green)','var(--yellow)','#8b5cf6','#ec4899'];document.getElementById('banca-chart').innerHTML=sorted.map(([nm,cnt],i)=>`<div class="bar-g"><div class="bar-v">${cnt}</div><div class="bar-b" style="height:${Math.round(cnt/mx*100)}%;background:${cols[i%cols.length]}"></div><div class="bar-l">${nm.substring(0,7)}</div></div>`).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';}
+function renderStats(){renderDesempenhoPeriodo();renderFormasCobranca();renderDiagnosticoErros();renderSubtemas();renderMistura();const ac=questions.reduce((a,q)=>a+(q.acertos||0),0),er=questions.reduce((a,q)=>a+(q.erros||0),0),pct=(ac+er)>0?Math.round(ac/(ac+er)*100):null;document.getElementById('st-total').textContent=questions.length;document.getElementById('st-ac').textContent=ac;document.getElementById('st-er').textContent=er;document.getElementById('st-pct').textContent=pct!==null?pct+'%':'—';const byMat={};questions.forEach(q=>{const m=q.materia||'Sem matéria';if(!byMat[m])byMat[m]={ac:0,er:0,tot:0};byMat[m].ac+=q.acertos||0;byMat[m].er+=q.erros||0;byMat[m].tot++;});const mxT=Math.max(...Object.values(byMat).map(v=>v.ac+v.er),1);document.getElementById('mat-chart').innerHTML=Object.entries(byMat).sort((a,b)=>b[1].tot-a[1].tot).slice(0,7).map(([nm,v])=>{const t=v.ac+v.er,p=t>0?Math.round(v.ac/t*100):0,w=t>0?Math.round(t/mxT*100):5;return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${nm}</span><span class="mat-pct">${t>0?p+'%':v.tot+' q'}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const mxCount=Math.max(...Object.values(byMat).map(v=>v.tot),1);document.getElementById('mat-count-chart').innerHTML=Object.entries(byMat).sort((a,b)=>a[1].tot-b[1].tot).map(([nm,v])=>{const w=Math.round(v.tot/mxCount*100);return`<div class="mat-row"><div class="mat-row-h"><span class="mat-name">${esc(nm)}</span><span class="mat-pct">${v.tot} q</span></div><div class="prog-bar"><div class="prog-fill" style="width:${w}%;background:var(--accent2)"></div></div></div>`;}).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';const byBan={};questions.forEach(q=>{const b=q.banca||'Outras';byBan[b]=(byBan[b]||0)+1;});const sorted=Object.entries(byBan).sort((a,b)=>b[1]-a[1]).slice(0,6),mx=Math.max(...sorted.map(([,v])=>v),1),cols=['var(--accent)','var(--accent2)','var(--green)','var(--yellow)','#8b5cf6','#ec4899'];document.getElementById('banca-chart').innerHTML=sorted.map(([nm,cnt],i)=>`<div class="bar-g"><div class="bar-v">${cnt}</div><div class="bar-b" style="height:${Math.round(cnt/mx*100)}%;background:${cols[i%cols.length]}"></div><div class="bar-l">${nm.substring(0,7)}</div></div>`).join('')||'<div style="color:var(--muted);font-size:13px">Sem dados</div>';}
 
 // BACKUP — EXPORTAR
 // ===== BACKUP COMPLETO =====
@@ -6771,4 +6784,128 @@ function renderFormasCobranca(){
     ${cob}
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:18px 0 6px">Formas que mais te derrubam (mín. 2 respostas)</div>
     ${lista||'<div style="color:var(--muted);font-size:13px">Ainda sem respostas suficientes nas caixinhas.</div>'}`;
+}
+
+
+// ===== DIAGNÓSTICO DOS ERROS =====
+// Pedido do Anderson (04/11): identificar melhor os erros. Os contadores dizem QUANTO se
+// erra; o registro de respostas (uma linha por resposta, com hora e tempo gasto) permite
+// perguntar POR QUE e ONDE a revisão não está funcionando:
+//   1) assuntos em que errar e rever não corrige o erro (falta teoria, não repetição);
+//   2) questões que você erra de novo toda vez;
+//   3) acerto pelo tempo gasto (pressa x dúvida);
+//   4) acerto pela posição da resposta no dia (cansaço);
+//   5) acerto pela hora do dia;
+//   6) questão vista pela 1ª vez x revisão.
+// Só lê o registro; não muda fila nem agendamento.
+let deDias=30;
+function deCard(){
+  let c=document.getElementById('de-card');if(c)return c;
+  const pg=document.getElementById('page-stats');const body=pg&&pg.querySelector('.page-body');if(!body)return null;
+  c=document.createElement('div');c.id='de-card';c.className='card';c.style.cssText='padding:24px;margin-bottom:24px';
+  const fc=document.getElementById('fc-card')||document.getElementById('dp-card');
+  body.insertBefore(c,fc?fc.nextSibling:(body.children[1]||null));
+  return c;
+}
+function dePeriodo(n){deDias=n;renderDiagnosticoErros();}
+// Linhas de barra: uma série só (acerto), então sem legenda; valor escrito ao lado e
+// detalhe no balão. Faixa com poucas respostas fica apagada: % de 6 respostas é ruído.
+function deBarras(linhas,minN){
+  return linhas.map(l=>{
+    const pct=l.n?l.ac/l.n*100:null,fraco=l.n<minN;
+    return `<div title="${esc(l.rot)}: ${l.ac} acertos em ${l.n} respostas${fraco?' (poucas respostas, leitura fraca)':''}" style="display:grid;grid-template-columns:minmax(96px,150px) 1fr 92px;gap:10px;align-items:center;margin:5px 0;opacity:${fraco?.45:1}">
+      <span style="font-size:12px;color:var(--ink2)">${esc(l.rot)}</span>
+      <div style="height:10px;background:var(--surface2);border-radius:5px;overflow:hidden"><div style="height:100%;width:${pct===null?0:pct}%;background:var(--accent2);border-radius:0 4px 4px 0"></div></div>
+      <span style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--ink);text-align:right">${pct===null?'—':Math.round(pct)+'%'} <span style="color:var(--muted)">· ${l.n}</span></span>
+    </div>`;}).join('');
+}
+// Frase automática: só quando duas faixas com respostas suficientes diferem 10+ pontos.
+function deLeitura(linhas,minN,textoFn){
+  const v=linhas.filter(l=>l.n>=minN);if(v.length<2)return '';
+  const pc=l=>l.ac/l.n*100;
+  const melhor=v.reduce((m,l)=>pc(l)>pc(m)?l:m),pior=v.reduce((m,l)=>pc(l)<pc(m)?l:m);
+  if(pc(melhor)-pc(pior)<10)return `<div class="dash-cap" style="margin-top:6px">Sem diferença relevante entre as faixas (menos de 10 pontos).</div>`;
+  return `<div style="font-size:12.5px;color:var(--ink2);margin-top:8px;line-height:1.6">💡 ${textoFn(melhor,pior,Math.round(pc(melhor)),Math.round(pc(pior)))}</div>`;
+}
+async function renderDiagnosticoErros(){
+  const c=deCard();if(!c)return;
+  let todos=[];try{todos=(await lerLog()).filter(r=>r&&typeof r.ts==='number').sort((a,b)=>a.ts-b.ts);}catch(e){}
+  const desde=deDias>0?Date.now()-deDias*86400000:0;
+  const L=todos.filter(r=>r.ts>=desde);
+  const btn=(n,t)=>`<button class="btn ${deDias===n?'btn-primary':'btn-ghost'} btn-sm" onclick="dePeriodo(${n})">${t}</button>`;
+  let html=`<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+    <div class="chart-title" style="margin:0">🔎 Diagnóstico dos erros</div>
+    <div style="display:flex;gap:4px">${btn(7,'7 dias')}${btn(30,'30 dias')}${btn(90,'90 dias')}${btn(0,'Tudo')}</div></div>
+    <div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:16px">Lê cada resposta que você deu (com hora e tempo gasto) para mostrar <strong>onde</strong> e <strong>por que</strong> os erros acontecem. Acerto = alternativa clicada certa.</div>`;
+  if(L.length<20){c.innerHTML=html+`<div class="dash-vazio">Poucas respostas no período (${L.length}). Escolha um período maior ou estude mais um pouco.</div>`;return;}
+  const ok=dpAcertou, MIN=20;
+  const sec=(t,sub)=>`<div style="font-size:13px;font-weight:700;color:var(--ink);margin:22px 0 4px">${t}</div><div class="dash-cap" style="margin:0 0 8px">${sub}</div>`;
+
+  // --- 1) Erros que a revisão não corrige: cada erro seguido de nova resposta à mesma questão.
+  const porQ=new Map();todos.forEach(r=>{if(!porQ.has(r.qid))porQ.set(r.qid,[]);porQ.get(r.qid).push(r);});
+  const porAss=new Map(),teimosas=[];
+  porQ.forEach((rs,qid)=>{
+    for(let i=0;i<rs.length-1;i++){
+      if(ok(rs[i])||rs[i].ts<desde)continue;
+      const k=(rs[i].materia||'—')+'§'+(rs[i].subtema||'—');
+      const o=porAss.get(k)||{materia:rs[i].materia||'—',subtema:rs[i].subtema||'—',casos:0,corrigiu:0};
+      o.casos++;if(ok(rs[i+1]))o.corrigiu++;porAss.set(k,o);
+    }
+    const erros=rs.filter(r=>!ok(r)&&r.ts>=desde).length,ult=rs[rs.length-1];
+    if(erros>=2&&!ok(ult))teimosas.push({qid,erros,vezes:rs.length,materia:ult.materia,subtema:ult.subtema});
+  });
+  const ruins=[...porAss.values()].filter(o=>o.casos>=3&&o.corrigiu/o.casos<0.5).sort((a,b)=>(b.casos-b.corrigiu)-(a.casos-a.corrigiu)).slice(0,8);
+  const totCasos=[...porAss.values()].reduce((s,o)=>s+o.casos,0),totCorr=[...porAss.values()].reduce((s,o)=>s+o.corrigiu,0);
+  html+=sec('1. Erros que a revisão não está corrigindo',`Depois de errar, quando a questão voltou você acertou em <strong>${totCasos?Math.round(totCorr/totCasos*100):0}%</strong> das vezes (${totCorr} de ${totCasos}). Abaixo, assuntos com 3+ casos em que errou de novo na maioria: rever a mesma questão não está resolvendo — vale voltar à teoria.`);
+  html+=ruins.length?ruins.map(o=>{const arg=s=>esc(s).replace(/'/g,'&#39;');return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border);flex-wrap:wrap">
+      <div style="flex:1;min-width:200px"><div style="font-size:13px;font-weight:600">${esc(o.subtema)}</div><div style="font-size:11px;color:var(--muted)">${esc(o.materia)}</div></div>
+      <span style="font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--accent)" title="De ${o.casos} erros revistos, corrigiu ${o.corrigiu}">corrigiu ${o.corrigiu}/${o.casos}</span>
+      <button class="btn btn-outline btn-sm" onclick="estudarSubtema('${arg(o.materia)}','${arg(o.subtema)}')">Estudar</button></div>`;}).join('')
+    :'<div class="dash-vazio" style="padding:10px">Nenhum assunto com erro persistente no período. 👏</div>';
+
+  // --- 2) Questões que você erra toda vez
+  teimosas.sort((a,b)=>b.erros-a.erros);
+  html+=sec('2. Questões que você erra de novo',`${teimosas.length} questão(ões) com 2+ erros no período e que continuam erradas na última tentativa. Abra no Banco (filtro 🔥 Leeches mostra as de muitos erros) e escreva um 🗒️ comentário sobre a pegadinha.`);
+  if(teimosas.length){
+    const porId=new Map(questions.map(q=>[q.id,q]));
+    html+=teimosas.slice(0,6).map(t=>{const q=porId.get(t.qid);const txt=q?semMarcadorImg(q.questao||'').replace(/[*#>]/g,'').replace(/\s+/g,' ').slice(0,110):'(questão não está mais no banco)';
+      return `<div style="padding:6px 0;border-top:1px solid var(--border);font-size:12px"><span style="color:var(--accent);font-weight:700">${t.erros}× errada</span> <span style="color:var(--muted)">· ${esc(t.subtema||t.materia||'')}</span><div style="color:var(--ink2)">${esc(txt)}…</div></div>`;}).join('');
+  }
+
+  // --- 3) Tempo gasto
+  const comMs=L.filter(r=>r.ms>0);
+  const faixasT=[['menos de 30 s',0,30e3],['30 s a 1 min',30e3,60e3],['1 a 2 min',60e3,120e3],['mais de 2 min',120e3,Infinity]]
+    .map(([rot,a,b])=>{const g=comMs.filter(r=>r.ms>=a&&r.ms<b);return{rot,n:g.length,ac:g.filter(ok).length};});
+  html+=sec('3. Acerto pelo tempo gasto na questão','Muito erro rápido sugere pressa (leitura incompleta); muito erro demorado sugere dúvida de conteúdo.');
+  html+=comMs.length?deBarras(faixasT,MIN)+deLeitura(faixasT,MIN,(m,p,pm,pp)=>p===faixasT[0]
+      ?`Você acerta <strong>${pp}%</strong> quando responde em ${p.rot}, contra ${pm}% em ${m.rot}. Parece <strong>pressa</strong>: vale ler o enunciado até o fim antes de marcar.`
+      :`Seu pior desempenho é em ${p.rot} (<strong>${pp}%</strong>), contra ${pm}% em ${m.rot}. Questão demorada costuma ser dúvida de conteúdo — anote 🗒️ o ponto que travou.`)
+    :'<div class="dash-vazio" style="padding:10px">Sem tempo registrado nas respostas do período.</div>';
+
+  // --- 4) Posição da resposta no dia (cansaço)
+  const ordemDia=new Map();   // conta sobre todas as respostas do dia, não só as do período
+  todos.forEach(r=>{const k=r.dia||ymd(new Date(r.ts));ordemDia.set(k,(ordemDia.get(k)||0)+1);r.__pos=ordemDia.get(k);});
+  const faixasP=[['1ª a 20ª',1,20],['21ª a 40ª',21,40],['41ª a 60ª',41,60],['61ª em diante',61,Infinity]]
+    .map(([rot,a,b])=>{const g=L.filter(r=>r.__pos>=a&&r.__pos<=b);return{rot,n:g.length,ac:g.filter(ok).length};});
+  html+=sec('4. Acerto pela posição da resposta no dia','Se o acerto cai ao longo do dia, o problema pode ser cansaço, não conteúdo.');
+  html+=deBarras(faixasP,MIN)+deLeitura(faixasP,MIN,(m,p,pm,pp)=>faixasP.indexOf(p)>faixasP.indexOf(m)
+      ?`O acerto cai de ${pm}% (${m.rot} questão do dia) para <strong>${pp}%</strong> (${p.rot}). Sinal de <strong>cansaço</strong>: experimente uma pausa curta ou uma meta diária menor.`
+      :`Você rende melhor mais adiante no dia (${pm}% em ${m.rot}) do que no começo (<strong>${pp}%</strong> em ${p.rot}). Um aquecimento leve antes pode ajudar.`);
+
+  // --- 5) Hora do dia
+  const faixasH=[['manhã (5h–12h)',5,12],['tarde (12h–18h)',12,18],['noite (18h–24h)',18,24],['madrugada (0h–5h)',0,5]]
+    .map(([rot,a,b])=>{const g=L.filter(r=>{const h=new Date(r.ts).getHours();return h>=a&&h<b;});return{rot,n:g.length,ac:g.filter(ok).length};});
+  html+=sec('5. Acerto pela hora do dia','Ajuda a escolher o horário das matérias mais difíceis.');
+  html+=deBarras(faixasH,MIN)+deLeitura(faixasH,MIN,(m,p,pm,pp)=>`Você acerta ${pm}% de ${m.rot.split(' ')[0]} e <strong>${pp}%</strong> de ${p.rot.split(' ')[0]}. Deixe as matérias em que mais erra para a ${m.rot.split(' ')[0]}.`);
+
+  // --- 6) Primeira vez x revisão
+  const primeira=new Map();todos.forEach(r=>{if(!primeira.has(r.qid))primeira.set(r.qid,r.ts);});
+  const ini=L.filter(r=>primeira.get(r.qid)===r.ts),rev=L.filter(r=>primeira.get(r.qid)!==r.ts);
+  const faixasR=[{rot:'1ª vez',n:ini.length,ac:ini.filter(ok).length},{rot:'revisão',n:rev.length,ac:rev.filter(ok).length}];
+  html+=sec('6. Questão inédita x revisão','Na revisão o acerto deveria ser bem maior. Se não for, a revisão está vindo tarde demais ou a correção não fixou.');
+  html+=deBarras(faixasR,MIN)+deLeitura(faixasR,MIN,(m,p,pm,pp)=>m.rot==='revisão'
+      ?`Revisão em ${pm}% contra ${pp}% na 1ª vez: a revisão está funcionando.`
+      :`Você acerta <strong>menos na revisão</strong> (${pp}%) do que na 1ª vez (${pm}%). Ao errar, leia o comentário com calma e use 🗒️ para registrar a pegadinha.`);
+  html+=`<div class="dash-cap" style="margin-top:14px">Faixas com menos de ${MIN} respostas aparecem apagadas e não entram nas conclusões. Passe o mouse numa barra para ver os números.</div>`;
+  c.innerHTML=html;
 }

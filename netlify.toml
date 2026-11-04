@@ -9,3 +9,10 @@
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+# Deploy Previews (a "cópia" que o Netlify publicava a cada envio para o PR) gastavam
+# créditos em dobro. Esta regra faz o Netlify pular só essas cópias: "exit 0" diz a ele
+# que não há nada a publicar ali. A publicação principal (Production), que é o site,
+# não é afetada e segue publicando a cada envio.
+[context.deploy-preview]
+  ignore = "exit 0"
