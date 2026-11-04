@@ -2005,7 +2005,10 @@ function planoLotePrioritario(ehNova){
   const pt=histResp&&histResp.primeiroTs;
   const hoje=pt?lote.filter(q=>(pt.get(q.id)||0)>=inicioHoje).length:0;
   const n=diasAteProva();
-  const dias=(n===null||n<=0)?1:Math.max(1,n-LOTE_FOLGA_DIAS);
+  // Lote prioritário só existe ATÉ a prova. Sem data, ou com a prova no passado, a conta
+  // de dias virava 1 e o app empurrava o lote inteiro para a fila de todo dia.
+  if(n===null||n<=0)return{pend:0,hoje:0,cota:0,dias:0};
+  const dias=Math.max(1,n-LOTE_FOLGA_DIAS);
   const cotaDia=Math.ceil((pend+hoje)/dias);
   return{pend,hoje,dias,cota:Math.max(0,Math.min(pend,cotaDia-hoje))};
 }

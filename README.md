@@ -13,6 +13,7 @@ App de estudo para concursos fiscais que roda inteiro no navegador (HTML + JS, s
 index.html                  marcação das telas
 css/style.css               estilos (tema claro/escuro)
 js/app.js                   núcleo: armazenamento, SM-2, fila, importação, geração, estatísticas
+js/caixinhas.js             mapa questão → forma de cobrança ("caixinhas"), gerado a partir do banco
 js/calculadora-revisao.js   calculadora, flashcards de revisão, aviso de reta final, barra da chave
 js/dashboard.js             dashboard por disciplina/assunto
 js/formulas.js              renderização de fórmulas LaTeX (KaTeX)
@@ -37,3 +38,9 @@ arquivo com **Mesclar**.
 Backups feitos antes desta versão levam só as questões. Para recuperar o histórico de
 uma instalação antiga, abra `ferramentas/exportar-tudo.html` no mesmo navegador em que
 ela era usada e importe o arquivo que ele gerar.
+
+## Atualizando arquivos pelo GitHub
+
+Ao enviar uma versão nova de um arquivo pelo site do GitHub ("Add files via upload"),
+entre antes na pasta certa (`js/`, `css/`…) e envie de lá. Arquivo enviado na raiz do
+projeto não é usado pelo site — o `index.html` só carrega os que estão nas pastas.
