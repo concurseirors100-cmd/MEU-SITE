@@ -44,6 +44,7 @@
     <div class="nav-item" onclick="nav('backup')"><span>💾</span> Backup</div>
     <div class="nav-item" onclick="nav('ranking')"><span>🏆</span> Ranking</div>
     <div class="nav-item" onclick="nav('dashboard')"><span>🧭</span> Dashboard</div>
+    <div class="nav-item" onclick="nav('lupa')"><span>🔬</span> Lupa</div>
   </nav>
   <div class="sidebar-bottom">
     <div class="sidebar-stat"><span class="sidebar-stat-num" id="sb-total">0</span>questões salvas</div>
@@ -203,6 +204,7 @@
                 <div style="font-size:11px;color:var(--muted);margin-bottom:8px">1 clique marca · 2 cliques descarta (risca) a alternativa</div>
                 <button class="alt-confirm-btn" id="alt-confirm-btn" onclick="confirmarResposta()" disabled="">Selecione uma alternativa</button>
               </div>
+              <div id="fc-como"><span>Como acertei?</span><button data-v="certeza" onclick="lupaEscolherComo('certeza')" title="Sabia a regra de todas as alternativas">✅ Certeza</button><button data-v="eliminacao" onclick="lupaEscolherComo('eliminacao')" title="Acertei porque a certa era a mais forte, ou eliminando — alguma alternativa eu não sabia">🔍 Eliminação</button><button data-v="chute" onclick="lupaEscolherComo('chute')" title="Chutei">🎲 Chute</button></div>
               <div class="rating-row" id="fc-rate">
                 <button class="r-btn r0" onclick="rate(0)">✗ Errei<div class="r-sub" id="rsub-0">amanhã</div></button>
                 <button class="r-btn r1" onclick="rate(1)">↩ Difícil<div class="r-sub" id="rsub-1">2 dias</div></button>
@@ -519,6 +521,18 @@
     <div class="page-body"><div id="dash-corpo"></div></div>
   </div>
 
+  <!-- LUPA -->
+  <div class="page" id="page-lupa">
+    <div class="page-head"><div><div class="page-title">🔬 <em>Lupa</em></div><div class="page-sub">Itens curtos por dispositivo: das questões que você errou ou acertou por eliminação/chute, e do texto de lei nova</div></div></div>
+    <div class="page-body">
+      <div id="lupa-painel"></div>
+      <div id="lupa-sessao" style="display:none">
+        <div style="text-align:right;margin-bottom:8px"><button class="btn btn-ghost btn-sm" onclick="lupaSairSessao()">✕ Sair da sessão</button></div>
+        <div class="card" id="lupa-item"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- BACKUP -->
   <div class="page" id="page-backup">
     <div class="page-head"><div><div class="page-title">Backup &amp; <em>Importação</em></div><div class="page-sub">Exporte seu banco para não perder nada — importe em qualquer dispositivo</div></div></div>
@@ -743,6 +757,7 @@
 
 <script src="js/caixinhas.js"></script>
 <script src="js/app.js"></script>
+<script src="js/lupa.js"></script>
 
 
 <div class="calc-panel" id="calc-panel">
