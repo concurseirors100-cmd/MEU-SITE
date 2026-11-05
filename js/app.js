@@ -209,7 +209,7 @@ function saveResumos(){try{localStorage.setItem('questia_resumos',JSON.stringify
 // Grava o que os contadores não guardam: quando foi, em que assunto, e se a
 // ALTERNATIVA clicada estava certa — que é o dado honesto de acerto. A nota dos
 // quatro botões diz o quanto você quer rever, não se você acertou.
-function registrarResposta(q,nota,acertouClique,ms){
+function registrarResposta(q,nota,acertouClique,ms,como){
   if(!idbOk)return;
   try{
     const tx=db.transaction(ST_LOG,'readwrite');
@@ -218,6 +218,7 @@ function registrarResposta(q,nota,acertouClique,ms){
       materia:(q.materia||'').trim(), subtema:(q.subtema||'').trim(),
       fonte:q.fonte||'ia', nota:nota,
       acertouClique:(acertouClique===null||acertouClique===undefined)?null:!!acertouClique,
+      como:como||null, // Lupa: certeza/eliminacao/chute (só em acerto, quando marcado)
       ms:ms>0&&ms<600000?ms:null // já vem calculado (limitado a 3min) de quem chamou; blindagem extra contra valor bugado (negativo ou absurdamente alto)
     });
   }catch(e){console.warn('[QuestIA] log de resposta falhou:',e);}
@@ -1207,7 +1208,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;',
 function semMarcadorImg(s){return String(s||'').replace(/\[\[IMG:[^\]]*\]\]/g,'[imagem]').replace(/\[\[IMG-URL:[^\]]*\]\]/gi,'[imagem]').replace(/\[\[IMAGEM N[ÃA]O IMPORTADA\]\]/gi,'[imagem]');}
 
 // NAV
-function nav(page){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('page-'+page).classList.add('active');['gerar','banco','estudar','resumos','revisao','stats','meta','backup','ranking','dashboard'].forEach((p,i)=>{if(p===page)document.querySelectorAll('.nav-item')[i].classList.add('active');});if(page==='banco')renderBanco();if(page==='estudar')initStudy();if(page==='resumos')renderResumos();if(page==='revisao'){loadCards();document.getElementById('rev-meta-input').value=cfgRev().meta;document.getElementById('rev-erros-input').value=cfgRev().minErros;renderRevisao();}if(page==='stats'){
+function nav(page){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('page-'+page).classList.add('active');['gerar','banco','estudar','resumos','revisao','stats','meta','backup','ranking','dashboard','lupa'].forEach((p,i)=>{if(p===page)document.querySelectorAll('.nav-item')[i].classList.add('active');});if(page==='lupa'&&typeof renderLupa==='function'){const ss=document.getElementById('lupa-sessao');if(ss)ss.style.display='none';const pp=document.getElementById('lupa-painel');if(pp)pp.style.display='block';renderLupa();}if(page==='banco')renderBanco();if(page==='estudar')initStudy();if(page==='resumos')renderResumos();if(page==='revisao'){loadCards();document.getElementById('rev-meta-input').value=cfgRev().meta;document.getElementById('rev-erros-input').value=cfgRev().minErros;renderRevisao();}if(page==='stats'){
     renderStats();renderSchedCard();
     // Inicializar datas se ainda não definidas
     const toEl=document.getElementById('hist-to');
@@ -2176,6 +2177,7 @@ function showCard(){
   {const bp=document.getElementById('fc-pratica');if(bp){bp.style.display='none';bp.innerHTML='';}}
   document.querySelector('.fc-wrap').classList.remove('expanded');
   document.getElementById('fc-rate').classList.remove('show');
+  if(typeof lupaEsconderComo==='function')lupaEsconderComo();
   document.getElementById('fc-delete-wrap').style.display='none';
   cardMostradoEm=Date.now(); cliqueCorreto=null;
   pincelZerar(); fecharCalculadora(); cardTempoDescontado=0; ocultoDesde=null;
@@ -2357,6 +2359,7 @@ function selectAlt(chosen){
     renderNotaQuestao(questions.find(x=>x.id===q.id)||q,true);
   }
   updateRatingLabels(q);
+  if(typeof lupaMostrarComo==='function')lupaMostrarComo(cliqueCorreto===true);
   document.getElementById('fc-rate').classList.add('show');
   document.getElementById('fc-delete-wrap').style.display='block';
 }
@@ -2419,7 +2422,8 @@ function rate(quality){
   // na mesma tela).
   const msGasto=cardMostradoEm?Math.min(Math.max(0,Date.now()-cardMostradoEm-cardTempoDescontado),TEMPO_MAX_QUESTAO):null;
   // Registrar no histórico diário
-  registrarResposta(questions[ri],quality,cliqueCorreto,msGasto);
+  const comoAcertou=(typeof lupaConsumirComo==='function')?lupaConsumirComo(questions[ri],cliqueCorreto===true&&quality>0):null;
+  registrarResposta(questions[ri],quality,cliqueCorreto,msGasto,comoAcertou);
   const td=today();
   let hist=histCache;
   if(!hist[td]) hist[td]={ac:0,er:0,ms:0,mat:{}};
@@ -3603,7 +3607,9 @@ async function coletarExtras(){
   let respostas=[],rankingHist=null;
   try{respostas=(await lerLog()).map(({seq,...r})=>r);}catch(e){}
   try{if(idbOk)rankingHist=await idbLer(ST_META,'ranking_hist');}catch(e){}
-  return{hist:histCache||{},respostas,rankingHist:rankingHist||null,localStorage:ls};
+  let fragmentosBk=null;
+  try{if(idbOk)fragmentosBk=(await idbLer(ST_META,'fragmentos'))||null;}catch(e){}
+  return{hist:histCache||{},respostas,rankingHist:rankingHist||null,fragmentos:fragmentosBk,localStorage:ls};
 }
 async function exportarBanco(){
   if(questions.length===0){notify('Banco vazio — nada para exportar','err');return;}
@@ -3708,6 +3714,13 @@ async function aplicarExtras(ex,modo){
     let atual={};try{atual=(await idbLer(ST_META,'ranking_hist'))||{};}catch(e){}
     await idbGravar(ST_META,subst?ex.rankingHist:Object.assign({},ex.rankingHist,atual),'ranking_hist');
     try{rkCarregado=false;rkHist={};}catch(e){}
+  }
+  // 3b) itens da Lupa (fragmentos): mescla por id, sem apagar os deste navegador
+  if(idbOk&&Array.isArray(ex.fragmentos)&&ex.fragmentos.length){
+    let atual=[];try{atual=subst?[]:((await idbLer(ST_META,'fragmentos'))||[]);}catch(e){}
+    const ids=new Set(atual.map(f=>f.id));const final=atual.concat(ex.fragmentos.filter(f=>f&&f.id&&!ids.has(f.id)));
+    await idbGravar(ST_META,final,'fragmentos');
+    try{fragCarregado=false;}catch(e){}
   }
   // 4) resumos, flashcards e configurações
   if(ex.localStorage&&typeof ex.localStorage==='object'){
