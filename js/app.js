@@ -209,7 +209,7 @@ function saveResumos(){try{localStorage.setItem('questia_resumos',JSON.stringify
 // Grava o que os contadores não guardam: quando foi, em que assunto, e se a
 // ALTERNATIVA clicada estava certa — que é o dado honesto de acerto. A nota dos
 // quatro botões diz o quanto você quer rever, não se você acertou.
-function registrarResposta(q,nota,acertouClique,ms,como){
+function registrarResposta(q,nota,acertouClique,ms,como,extra){
   if(!idbOk)return;
   try{
     const tx=db.transaction(ST_LOG,'readwrite');
@@ -219,6 +219,8 @@ function registrarResposta(q,nota,acertouClique,ms,como){
       fonte:q.fonte||'ia', nota:nota,
       acertouClique:(acertouClique===null||acertouClique===undefined)?null:!!acertouClique,
       como:como||null, // Lupa: certeza/eliminacao/chute (só em acerto, quando marcado)
+      papel:(extra&&extra.papel)||null, // revisão com variante: 'irma'|'variante' quando entrou no lugar de uma revisão
+      orig:(extra&&extra.orig!==undefined)?extra.orig:null,
       ms:ms>0&&ms<600000?ms:null // já vem calculado (limitado a 3min) de quem chamou; blindagem extra contra valor bugado (negativo ou absurdamente alto)
     });
   }catch(e){console.warn('[QuestIA] log de resposta falhou:',e);}
@@ -1161,7 +1163,7 @@ function renderMateriasPausadas(){
       return `<span class="tag" style="background:var(--indigo-light);color:var(--indigo-text);border:1px solid var(--indigo-border);display:inline-flex;gap:6px;align-items:center;text-transform:none;font-size:11px">⏸ ${esc(m)} · ${n}<button onclick="reativarMateriaPausada(${JSON.stringify(m).replace(/"/g,'&quot;')})" title="Reativar" style="background:none;border:none;cursor:pointer;color:inherit;font-weight:700;font-size:12px;padding:0">▶ reativar</button></span>`;}).join('')
     +'</div>';
 }
-function isDue(q){return!q.suspensa&&!materiaPausada(q)&&(!q.nextDue||q.nextDue<=today());}
+function isDue(q){return!q.suspensa&&!q.soIrma&&!materiaPausada(q)&&(!q.nextDue||q.nextDue<=today());}
 function isLeech(q){return(q.erros||0)>=schedCfg().leechLimite;}
 // Quantos dias a questão está vencida (negativo = ainda não venceu)
 function diasAtraso(q){
@@ -2059,6 +2061,12 @@ async function initStudy(){
   }
   const idsLote=new Set(novasLote.map(q=>q.id));
   let velhas=ordenarRevisoes(eleg.filter(q=>!ehNova(q)),statsMap);
+  // Revisão com variante (js/variante.js): nas matérias do escopo, revisão de acerto
+  // vira irmã/variante da mesma regra. A substituta sai das inéditas, se estava lá.
+  if(typeof varSubstituir==='function'){
+    velhas=varSubstituir(velhas,eleg,[...idsIrma,...idsLote]);
+    if(varSubst.size)novas=novas.filter(q=>!varSubst.has(q.id));
+  }
   metaEstourada=false;
   let fila;
   if(restaDia!==null){
@@ -2147,6 +2155,7 @@ function showCard(){
   const meta=[q.materia,q.banca].filter(Boolean).join(' · ')||'Questão';
   const subtemaStr=q.subtema?` · ${q.subtema}`:'';
   document.getElementById('fc-meta').textContent=meta+subtemaStr;
+  if(typeof varBadge==='function')varBadge(q);
   renderNotaQuestao(q,false);
   const favBtn=document.getElementById('fc-fav-btn');
   if(favBtn){favBtn.textContent=q.favorita?'★':'☆';favBtn.style.color=q.favorita?'var(--yellow-text)':'var(--muted)';favBtn.title=q.favorita?'Remover dos favoritos':'Favoritar — leve preferência na fila, sem furar o agendamento do SM-2';}
@@ -2423,7 +2432,8 @@ function rate(quality){
   const msGasto=cardMostradoEm?Math.min(Math.max(0,Date.now()-cardMostradoEm-cardTempoDescontado),TEMPO_MAX_QUESTAO):null;
   // Registrar no histórico diário
   const comoAcertou=(typeof lupaConsumirComo==='function')?lupaConsumirComo(questions[ri],cliqueCorreto===true&&quality>0):null;
-  registrarResposta(questions[ri],quality,cliqueCorreto,msGasto,comoAcertou);
+  registrarResposta(questions[ri],quality,cliqueCorreto,msGasto,comoAcertou,(typeof varInfoLog==='function')?varInfoLog(questions[ri]):null);
+  if(typeof varPosResposta==='function')varPosResposta(questions[ri],quality,cliqueCorreto);
   const td=today();
   let hist=histCache;
   if(!hist[td]) hist[td]={ac:0,er:0,ms:0,mat:{}};

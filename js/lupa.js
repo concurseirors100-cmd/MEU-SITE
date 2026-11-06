@@ -150,6 +150,7 @@ async function aplicarLoteLei(d){
 async function aplicarLoteFrag(d){
   await carregarFragmentos();
   if(d&&d.tipo==='questia-fragmentos-lei')return aplicarLoteLei(d);
+  if(d&&d.tipo==='questia-variantes-resposta'&&typeof varAplicarLote==='function')return varAplicarLote(d);
   const itens=d&&(d.itens||(Array.isArray(d)?d:null));
   if(!Array.isArray(itens)||!itens.length){notify('Arquivo sem itens','err');return;}
   const porId=new Map(questions.map(q=>[q.id,q]));
@@ -335,6 +336,7 @@ async function renderLupa(){
     </tbody></table>${linhas.length>60?`<div class="lupa-sub">+${linhas.length-60} dispositivos</div>`:''}`
     :`<div class="lupa-sub">Nenhum item ainda. Exporte um pedido acima, gere os itens e importe a resposta.</div>`}
   </div>`;
+  if(typeof varPainelHTML==='function'){try{el.insertAdjacentHTML('beforeend',await varPainelHTML());}catch(e){console.warn('[QuestIA] painel de variantes:',e);}}
 }
 
 // estilos da Lupa (ficam aqui para não mexer no style.css)
