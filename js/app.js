@@ -1138,7 +1138,7 @@ function materiasPausadas(){
   if(!cachePausadas){try{cachePausadas=new Set(JSON.parse(localStorage.getItem(CHAVE_PAUSADAS)||'[]'));}catch(e){cachePausadas=new Set();}}
   return cachePausadas;
 }
-function materiaPausada(q){const p=materiasPausadas();return p.size>0&&p.has((q.materia||'').trim());}
+function materiaPausada(q){const p=materiasPausadas();const m=(q.materia||'').trim();return (p.size>0&&p.has(m))||(perfilAtivo()==='sefaz'&&materiaForaDoEdital(m));}
 function salvarPausadas(set){cachePausadas=new Set(set);try{localStorage.setItem(CHAVE_PAUSADAS,JSON.stringify([...cachePausadas]));}catch(e){}}
 function pausarMateriaFiltrada(){
   const m=estudarFiltroMateria();
@@ -2097,6 +2097,7 @@ async function initStudy(){
   }
   // Revisão com variante (js/variante.js): na fila JÁ MONTADA do dia, cada revisão de
   // acerto do escopo vira irmã/variante da mesma regra (nada que já esteja na fila).
+  if(typeof perfilLimitarManutencao==='function')fila=await perfilLimitarManutencao(fila,statsMap);
   if(typeof varSubstituir==='function')fila=varSubstituir(fila);
   dueQueue=fila;
   dueIdx=0;updateSessBar();showCard();
@@ -2650,6 +2651,34 @@ const SCHED_PRESETS=[
   {nome:'Bem mais espaçado',im:1.50,desc:'150%'}
 ];
 const EDITAL=[{"n":"Legislação Tributária Municipal","p":"I","pts":20,"sR":1401,"sA":1084,"m":["LTM (Manaus)","Legislação Tributária dos Municípios","Direito Tributário Municipal"]},{"n":"Língua Portuguesa","p":"I","pts":10,"sR":109,"sA":89,"m":["Língua Portuguesa (Português)"]},{"n":"Direito Civil e Empresarial","p":"I","pts":8,"sR":0,"sA":0,"m":["Direito Civil","Direito Empresarial (Comercial)"]},{"n":"Contabilidade Geral","p":"I","pts":7.5,"sR":494,"sA":389,"m":["Contabilidade","Contabilidade Geral","Contabilidade de Custos"]},{"n":"Economia","p":"I","pts":7.5,"sR":633,"sA":453,"m":["Economia e Finanças Públicas"]},{"n":"Direito Penal e Processual Penal","p":"I","pts":7,"sR":200,"sA":150,"m":["Direito Penal","Direito Processual Penal"]},{"n":"Inglês Instrumental","p":"I","pts":5,"sR":0,"sA":0,"m":["Língua Inglesa (Inglês)"]},{"n":"Direito Administrativo","p":"I","pts":5,"sR":341,"sA":280,"m":["Direito Administrativo","Direito Administrativo (Doutrina e Leis Federais)"]},{"n":"Direito Constitucional","p":"I","pts":5,"sR":578,"sA":470,"m":["Direito Constitucional","Direito Constitucional (CF/1988 e Doutrina)","Direito Constitucional Municipal"]},{"n":"Direito Processual Civil","p":"I","pts":5,"sR":0,"sA":0,"m":["Direito Processual Civil"]},{"n":"Matemática Financeira","p":"I","pts":3.33,"sR":88,"sA":76,"m":["Matemática Financeira"]},{"n":"Raciocínio Lógico","p":"I","pts":3.33,"sR":63,"sA":49,"m":["Raciocínio Lógico"]},{"n":"Estatística","p":"I","pts":3.33,"sR":3,"sA":1,"m":["Estatística"]},{"n":"Direito Tributário e Legislação Tributária Nacional","p":"II","pts":60,"sR":1184,"sA":935,"m":["Direito Tributário","Reforma Tributária","Legislação Tributária Federal","Legislação Tributária dos Estados e do Distrito Federal"]},{"n":"Auditoria","p":"II","pts":45,"sR":324,"sA":281,"m":["Auditoria Privada","Auditoria Governamental e Controle"]},{"n":"Banco de Dados e Linguagem SQL","p":"II","pts":30,"sR":222,"sA":153,"m":["Banco de Dados","TI - Banco de Dados"]},{"n":"Governança de Dados e Segurança da Informação","p":"II","pts":30,"sR":136,"sA":95,"m":["LGPD","Segurança da Informação","Governança de Dados","TI - Segurança da Informação","Direito Digital","TI - Ciência de Dados e Inteligência Artificial"]},{"n":"Legislação Tributária (Zona Franca de Manaus)","p":"II","pts":30,"sR":0,"sA":0,"m":["Zona Franca de Manaus","Legislação Aduaneira"]},{"n":"Análise das Demonstrações Contábeis","p":"II","pts":15,"sR":0,"sA":0,"m":["Análise de Demonstrações Contábeis"]}];
+// ===== PERFIL DE PREPARAÇÃO (07/11, pedido do Anderson) =====
+// "manaus" = o edital do ISS Manaus acima (como era). "sefaz" = PRÉ-EDITAL de SEFAZ
+// (FCC), sem edital na praça: foco em Direito Tributário + reforma (inclui as regras
+// COMUNS de ICMS/ITCMD/IPVA — LC 87, LC 24, convênios; lei local de outro estado só
+// pelo estilo FCC, peso baixo), base com mínimo (Português, Contabilidade...) e
+// MANUTENÇÃO LEVE para o que já está no teto (Auditoria, TI/SQL, Segurança/LGPD):
+// cota semanal + alarme (js/perfil.js). Matéria fora do perfil fica PAUSADA só
+// enquanto o perfil estiver ativo — nada é apagado nem reagendado.
+// Pesos estimados das provas FCC recentes (CE/SP 2025-26); trocar pelo edital real.
+const CHAVE_PERFIL='questia_perfil';
+let PERFIL_ATUAL=null;
+function perfilAtivo(){if(PERFIL_ATUAL===null){try{PERFIL_ATUAL=localStorage.getItem(CHAVE_PERFIL)||'manaus';}catch(e){PERFIL_ATUAL='manaus';}}return PERFIL_ATUAL;}
+const EDITAL_SEFAZ=[
+ {"n":"Direito Tributário e Reforma Tributária","p":"II","pts":30,"foco":true,"sR":0,"sA":0,"m":["Direito Tributário","Reforma Tributária"]},
+ {"n":"Contabilidade","p":"II","pts":12,"sR":0,"sA":0,"m":["Contabilidade Geral","Contabilidade","Contabilidade de Custos","Análise de Demonstrações Contábeis"]},
+ {"n":"Legislação Tributária Federal","p":"II","pts":5,"foco":true,"sR":0,"sA":0,"m":["Legislação Tributária Federal"]},
+ {"n":"Legislação estadual de outros estados (estilo FCC)","p":"II","pts":2,"sR":0,"sA":0,"m":["Legislação Tributária dos Estados e do Distrito Federal"]},
+ {"n":"TI, Banco de Dados e SQL","p":"II","pts":3,"man":true,"sR":0,"sA":0,"m":["TI - Banco de Dados","Banco de Dados","TI - Ciência de Dados e Inteligência Artificial","Informática"]},
+ {"n":"Segurança da Informação e LGPD","p":"II","pts":2,"man":true,"sR":0,"sA":0,"m":["TI - Segurança da Informação","Segurança da Informação","LGPD","Governança de Dados","Direito Digital"]},
+ {"n":"Língua Portuguesa","p":"I","pts":8,"sR":0,"sA":0,"m":["Língua Portuguesa (Português)"]},
+ {"n":"Economia e Finanças Públicas","p":"I","pts":6,"sR":0,"sA":0,"m":["Economia e Finanças Públicas"]},
+ {"n":"Direito Constitucional e Administrativo","p":"I","pts":6,"sR":0,"sA":0,"m":["Direito Constitucional (CF/1988 e Doutrina)","Direito Constitucional","Direito Administrativo (Doutrina e Leis Federais)","Direito Administrativo"]},
+ {"n":"Matemática Financeira, Estatística e Raciocínio Lógico","p":"I","pts":5,"sR":0,"sA":0,"m":["Matemática Financeira","Estatística","Raciocínio Lógico","Matemática"]},
+ {"n":"Administração Geral e Pública","p":"I","pts":2,"sR":0,"sA":0,"m":["Administração Geral e Pública"]},
+ {"n":"Direito Civil e Empresarial","p":"I","pts":2,"sR":0,"sA":0,"m":["Direito Civil","Direito Empresarial (Comercial)"]},
+ {"n":"Auditoria","p":"I","pts":3,"man":true,"sR":0,"sA":0,"m":["Auditoria Privada","Auditoria Governamental e Controle"]}
+];
+if(perfilAtivo()==='sefaz')EDITAL.splice(0,EDITAL.length,...EDITAL_SEFAZ);
 const META_PADRAO={alvo:0.80,pisoProva:0.60};
 // Matéria vazia ("") não conta como fora do edital — é questão sem matéria
 // identificada (falha de import), não questão de outro concurso; suspender ela
@@ -3137,6 +3166,7 @@ function dadosMeta(){
 
 function renderMeta(){
   const wrap=document.getElementById('meta-body');if(!wrap)return;
+  if(typeof perfilRenderCard==='function')setTimeout(perfilRenderCard,0);
   const cfg=metaCfg(), {linhas,orfas}=dadosMeta();
   const el=document.getElementById('meta-alvo');
   if(el&&document.activeElement!==el)el.value=Math.round(cfg.alvo*100);
