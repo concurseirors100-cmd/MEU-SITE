@@ -2061,12 +2061,6 @@ async function initStudy(){
   }
   const idsLote=new Set(novasLote.map(q=>q.id));
   let velhas=ordenarRevisoes(eleg.filter(q=>!ehNova(q)),statsMap);
-  // Revisão com variante (js/variante.js): nas matérias do escopo, revisão de acerto
-  // vira irmã/variante da mesma regra. A substituta sai das inéditas, se estava lá.
-  if(typeof varSubstituir==='function'){
-    velhas=varSubstituir(velhas,eleg,[...idsIrma,...idsLote]);
-    if(varSubst.size)novas=novas.filter(q=>!varSubst.has(q.id));
-  }
   metaEstourada=false;
   let fila;
   if(restaDia!==null){
@@ -2101,6 +2095,9 @@ async function initStudy(){
     fila=[...novasForcadas,...fila]; // entram no topo — cobertura tem prioridade sobre o rodízio normal
     notify(`📌 ${novasForcadas.length} questão(ões) trazida(s) pro topo por peso de edital sem aparecer há ${DIAS_SEM_APARECER}+ dias`,'ok');
   }
+  // Revisão com variante (js/variante.js): na fila JÁ MONTADA do dia, cada revisão de
+  // acerto do escopo vira irmã/variante da mesma regra (nada que já esteja na fila).
+  if(typeof varSubstituir==='function')fila=varSubstituir(fila);
   dueQueue=fila;
   dueIdx=0;updateSessBar();showCard();
 }

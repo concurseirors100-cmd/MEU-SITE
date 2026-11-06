@@ -83,11 +83,12 @@ function varDispDe(q){
 // ---------- 1 e 2: substituição na fila de revisão ----------
 let varSubst=new Map();   // id da substituta -> id da original (só nesta montagem)
 function varEhVirgem(q){return !(q.acertos||0)&&!(q.erros||0)&&!(q.reps||0);}
-function varSubstituir(velhas,eleg,excluirIds){
+function varSubstituir(fila){
   varSubst=new Map();
-  if(typeof histResp==='undefined'||!histResp)return velhas;
+  if(typeof histResp==='undefined'||!histResp)return fila;
   const recente=Date.now()-(typeof QUAL_IRMA_RECENTE!=='undefined'?QUAL_IRMA_RECENTE:3)*86400000;
-  const naFila=new Set([...(excluirIds||[]),...velhas.map(q=>q.id)]);
+  // recebe a fila já montada do dia: nada que já esteja nela pode ser irmã
+  const naFila=new Set(fila.map(q=>q.id));
   const filtroOk=q=>(typeof filtroSessao!=='function')||filtroSessao(q);
   // pool: todas as questões do escopo que podem servir de irmã
   const pool=questions.filter(q=>varNoEscopo(q)&&!q.suspensa&&!(typeof materiaPausada==='function'&&materiaPausada(q))&&filtroOk(q));
@@ -110,7 +111,7 @@ function varSubstituir(velhas,eleg,excluirIds){
       ||c.slice().sort((a,b)=>(histResp.ultimoTs.get(a.id)||0)-(histResp.ultimoTs.get(b.id)||0))[0];
   };
   let n=0;const out=[];
-  for(const q of velhas){
+  for(const q of fila){
     if(n<VAR_MAX_DIA&&varNoEscopo(q)&&!varEhVirgem(q)&&!ultimaFoiErro(q)&&(q.varCont||0)<VAR_RODIZIO){
       const d=varDispDe(q);
       let sub=null;
@@ -122,7 +123,8 @@ function varSubstituir(velhas,eleg,excluirIds){
     }
     out.push(q);
   }
-  return out;
+  const vistos=new Set();
+  return out.filter(q=>{if(vistos.has(q.id))return false;vistos.add(q.id);return true;});
 }
 
 // chamado em rate(), antes do save()
