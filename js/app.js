@@ -2665,7 +2665,7 @@ let PERFIL_ATUAL=null;
 function perfilAtivo(){if(PERFIL_ATUAL===null){try{PERFIL_ATUAL=localStorage.getItem(CHAVE_PERFIL)||'manaus';}catch(e){PERFIL_ATUAL='manaus';}}return PERFIL_ATUAL;}
 const EDITAL_SEFAZ=[
  {"n":"Direito Tributário e Reforma Tributária","p":"II","pts":30,"foco":true,"sR":0,"sA":0,"m":["Direito Tributário","Reforma Tributária"]},
- {"n":"Contabilidade","p":"II","pts":12,"sR":0,"sA":0,"m":["Contabilidade Geral","Contabilidade","Contabilidade de Custos","Análise de Demonstrações Contábeis"]},
+ {"n":"Contabilidade","p":"II","pts":12,"sR":0,"sA":0,"m":["Contabilidade Geral","Contabilidade","Contabilidade de Custos"]},
  {"n":"Legislação Tributária Federal","p":"II","pts":5,"foco":true,"sR":0,"sA":0,"m":["Legislação Tributária Federal"]},
  {"n":"Legislação estadual de outros estados (estilo FCC)","p":"II","pts":2,"sR":0,"sA":0,"m":["Legislação Tributária dos Estados e do Distrito Federal"]},
  {"n":"TI, Banco de Dados e SQL","p":"II","pts":3,"man":true,"sR":0,"sA":0,"m":["TI - Banco de Dados","Banco de Dados","TI - Ciência de Dados e Inteligência Artificial","Informática"]},

@@ -35,10 +35,13 @@ async function salvarFragmentos(){
 // ---------- 1) "Como acertei?" ----------
 let lupaComo=null;
 function lupaEsconderComo(){lupaComo=null;const el=document.getElementById('fc-como');if(el)el.style.display='none';}
+// 07/11: as fichas "Como acertei?" saíram do card — responder duas vezes era atrito.
+// A dúvida agora vem do botão de avaliação (Difícil / Bom repetido, ver lupaNotas).
+// As marcações antigas (q.comoAcertei/q.lacunas) continuam valendo.
 function lupaMostrarComo(acertou){
   lupaComo=null;
   const el=document.getElementById('fc-como');if(!el)return;
-  el.style.display=acertou?'flex':'none';
+  el.style.display='none';
   el.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
 }
 function lupaEscolherComo(v){
@@ -63,11 +66,32 @@ function liberarLoteFrag(nome){
   if(!confirm(`Liberar o lote "${nome}"?\n\nAs questões dele voltam para a fila de fragmentação. Use só se o arquivo de resposta não vai mais voltar.`))return;
   salvarLotesFrag(lerLotesFrag().filter(l=>l.nome!==nome));renderLupa();
 }
+// Dúvida pelo botão de avaliação, lida do registro de respostas (vale para o passado):
+// Difícil = acertou com dúvida forte; Bom = desempenho mediano (conta só se repetido,
+// 2+ vezes na mesma questão, para não inundar a Lupa). Fácil/Dominada = certeza.
+let lupaNotas=new Map();
+async function lupaCarregarNotas(){
+  const L=(typeof lerLog==='function')?await lerLog():[];
+  const m=new Map();
+  L.forEach(r=>{if(r.nota!==1&&r.nota!==2)return;const o=m.get(r.qid)||{d:0,b:0,ultD:'',ultB:''};
+    if(r.nota===1){o.d++;if(r.dia>o.ultD)o.ultD=r.dia;}else{o.b++;if(r.dia>o.ultB)o.ultB=r.dia;}m.set(r.qid,o);});
+  lupaNotas=m;return m;
+}
+const LUPA_BOM_MIN=2;
+function lupaDuvida(q){
+  const o=lupaNotas.get(q.id);
+  const d=o?o.d:0, b=o&&o.b>=LUPA_BOM_MIN?o.b:0;
+  const ult=[o&&o.d?o.ultD:'',o&&b?o.ultB:'',q.lacunaEm||''].sort().pop();
+  return{d,b,ult,tem:d>0||b>0||(q.lacunas||0)>0};
+}
 // Candidata: matéria do escopo, com comentário, não suspensa, e com erro ou lacuna
 // ainda não fragmentada (ou com lacuna NOVA depois da última fragmentação).
 function motivoFrag(q){
   const m=[];
   if((q.erros||0)>0)m.push(`errou ${q.erros}x`);
+  const du=lupaDuvida(q);
+  if(du.d)m.push(`acertou com dúvida (Difícil) ${du.d}x`);
+  if(du.b)m.push(`desempenho mediano (Bom) ${du.b}x`);
   if((q.lacunas||0)>0)m.push(q.comoAcertei==='chute'?'acertou no chute':'acertou por eliminação/chute');
   return m.join(' · ');
 }
@@ -76,11 +100,15 @@ function candidatasFrag(){
   return questions.filter(q=>{
     if(q.suspensa||!q.comentario||!LUPA_MATERIAS.includes((q.materia||'').trim()))return false;
     if(pend.has(String(q.id)))return false;
-    const temErro=(q.erros||0)>0, temLacuna=(q.lacunas||0)>0;
-    if(!temErro&&!temLacuna)return false;
+    const temErro=(q.erros||0)>0, du=lupaDuvida(q);
+    if(!temErro&&!du.tem)return false;
     if(!q.fragmentadaEm)return true;
-    return !!(q.lacunaEm&&q.lacunaEm>q.fragmentadaEm);
-  }).sort((a,b)=>String(b.lacunaEm||'').localeCompare(String(a.lacunaEm||''))||((b.erros||0)-(a.erros||0)));
+    return !!(du.ult&&du.ult>q.fragmentadaEm);
+  }).sort((a,b)=>{
+    // prioridade: erro > Difícil > Bom repetido/ficha antiga; dentro, o mais recente
+    const pr=q=>{const du=lupaDuvida(q);return (q.erros||0)>0?0:du.d>0?1:2;};
+    return pr(a)-pr(b)||String(lupaDuvida(b).ult).localeCompare(String(lupaDuvida(a).ult))||((b.erros||0)-(a.erros||0));
+  });
 }
 function exportarLoteFrag(){
   const n=Math.max(1,Math.min(300,+(document.getElementById('frag-n')||{}).value||60));
@@ -290,6 +318,7 @@ document.addEventListener('keydown',e=>{
 function pct(a,b){return b?Math.round(100*a/b):null;}
 async function renderLupa(){
   await carregarFragmentos();
+  await lupaCarregarNotas();
   const el=document.getElementById('lupa-painel');if(!el)return;
   const venc=fragmentos.filter(fragVencido).length;
   // por dispositivo
@@ -301,7 +330,7 @@ async function renderLupa(){
   const esc0=questions.filter(q=>LUPA_MATERIAS.includes((q.materia||'').trim())&&!q.suspensa);
   const cand=candidatasFrag();
   const frag=esc0.filter(q=>q.fragmentadaEm).length;
-  const como={certeza:0,eliminacao:0,chute:0};esc0.forEach(q=>{if(como[q.comoAcertei]!==undefined)como[q.comoAcertei]++;});
+  const como={erro:0,dificil:0,bom:0};esc0.forEach(q=>{const du=lupaDuvida(q);if((q.erros||0)>0)como.erro++;else if(du.d)como.dificil++;else if(du.b)como.bom++;});
   const lotes=lerLotesFrag();
   el.innerHTML=`
   <div class="lupa-grid">
@@ -324,9 +353,9 @@ async function renderLupa(){
       ${lotes.length?`<div class="lupa-lotes">${lotes.map(l=>`<div><span><b>${esc(l.nome)}</b> · ${l.ids.length} questões · ${new Date(l.criadoEm).toLocaleDateString('pt-BR')}</span><button class="btn btn-ghost btn-sm" onclick="liberarLoteFrag('${esc(l.nome).replace(/'/g,"\\'")}')">liberar</button></div>`).join('')}</div>`:''}
     </div>
     <div class="card lupa-card">
-      <div class="lupa-h">🎯 Como você acertou (escopo)</div>
-      <div class="lupa-nums"><div><b>${como.certeza}</b><span>certeza</span></div><div><b>${como.eliminacao}</b><span>eliminação</span></div><div><b>${como.chute}</b><span>chute</span></div></div>
-      <div class="lupa-sub">Última marcação de cada questão. Eliminação e chute viram candidatas a fragmentar.</div>
+      <div class="lupa-h">🎯 De onde vêm as candidatas (escopo)</div>
+      <div class="lupa-nums"><div><b>${como.erro}</b><span>com erro</span></div><div><b>${como.dificil}</b><span>acertou no Difícil</span></div><div><b>${como.bom}</b><span>Bom ${LUPA_BOM_MIN}x ou mais</span></div></div>
+      <div class="lupa-sub">Vem do botão de avaliação: Errei → Difícil → Bom repetido. Fácil e Dominada contam como certeza.</div>
     </div>
   </div>
   <div class="card lupa-card" style="margin-top:14px">
