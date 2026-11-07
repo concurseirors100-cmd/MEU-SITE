@@ -1736,9 +1736,15 @@ function ordenarRevisoes(arr,statsMap){
 // DENTRO de cada disciplina a ordem continua sendo a do ordenarFila (score com
 // fatia limitada). Revisões não passam por aqui.
 const CHAVE_DEFICIT_NOVAS='questia_deficit_novas';
+// 07/11: contagem SEPARADA por perfil. Ao trocar para o pré-edital SEFAZ, os nomes
+// das disciplinas mudaram e as ~1.500 inéditas servidas no perfil Manaus continuavam
+// somando no total (T) — todas as disciplinas novas pareciam igualmente "atrasadas" e
+// a regra de não repetir a mesma disciplina seguida virava pingue-pongue entre as
+// duas de maior meta (Tributário × Economia: 15 e 9 das 30 primeiras inéditas).
+function chaveDeficitNovas(){return (typeof perfilAtivo==='function'&&perfilAtivo()==='sefaz')?CHAVE_DEFICIT_NOVAS+'_sefaz':CHAVE_DEFICIT_NOVAS;}
 function lerServidasNovas(){
   try{
-    const v=JSON.parse(localStorage.getItem(CHAVE_DEFICIT_NOVAS)||'null');
+    const v=JSON.parse(localStorage.getItem(chaveDeficitNovas())||'null');
     if(v&&typeof v==='object'&&v.porDisc&&typeof v.porDisc==='object')return v;
   }catch(e){}
   return {desde:today(),porDisc:{}};
@@ -1746,7 +1752,7 @@ function lerServidasNovas(){
 function registrarNovaServida(q){
   const s=lerServidasNovas(), d=disciplinaDaMateria(q.materia);
   s.porDisc[d]=(s.porDisc[d]||0)+1;
-  try{localStorage.setItem(CHAVE_DEFICIT_NOVAS,JSON.stringify(s));}catch(e){}
+  try{localStorage.setItem(chaveDeficitNovas(),JSON.stringify(s));}catch(e){}
 }
 function metaDaDisciplina(disc,ac,er){
   const ed=EDITAL.find(e=>e.n===disc);
