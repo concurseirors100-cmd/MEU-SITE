@@ -2098,6 +2098,7 @@ async function initStudy(){
   // Revisão com variante (js/variante.js): na fila JÁ MONTADA do dia, cada revisão de
   // acerto do escopo vira irmã/variante da mesma regra (nada que já esteja na fila).
   if(typeof perfilLimitarManutencao==='function')fila=await perfilLimitarManutencao(fila,statsMap);
+  fila=await limitarPorAssunto(fila,statsMap);
   if(typeof varSubstituir==='function')fila=varSubstituir(fila);
   dueQueue=fila;
   dueIdx=0;updateSessBar();showCard();
@@ -2455,16 +2456,51 @@ function rate(quality){
 function toggleSuspensa(id){
   const i=questions.findIndex(x=>x.id===id);if(i===-1)return;
   questions[i].suspensa=!questions[i].suspensa;
+  if(questions[i].suspensa){questions[i].suspensaEm=today();questions[i].suspensaPor='manual';}else{delete questions[i].suspensaEm;delete questions[i].suspensaPor;}
   save();updateSidebar();renderBanco();
   notify(questions[i].suspensa?'Questão suspensa — sai da fila, mas continua no banco':'Questão reativada','ok');
 }
 function suspenderAtual(){
   const q=dueQueue[dueIdx];if(!q)return;
   const i=questions.findIndex(x=>x.id===q.id);if(i===-1)return;
-  questions[i].suspensa=true;save();
+  questions[i].suspensa=true;questions[i].suspensaEm=today();questions[i].suspensaPor='estudo';save();
   dueQueue.splice(dueIdx,1);
   updateSidebar();updateSessBar();showCard();
   notify('Questão suspensa — nada foi apagado, reative em Banco → ⏸ Suspensas','ok');
+}
+// ===== PULAR (07/11) =====
+// Diferente de suspender: a questão vai para o FIM da fila de hoje e nada muda no
+// agendamento nem no banco. Se não der tempo de chegar nela, continua vencida amanhã.
+function pularAtual(){
+  if(ratingLock)return;
+  const q=dueQueue[dueIdx];if(!q)return;
+  if(dueQueue.length-dueIdx<=1){notify('É a última questão da fila de hoje — não há para onde pular','ok');return;}
+  dueQueue.splice(dueIdx,1);dueQueue.push(q);
+  showCard();
+  notify('⏭ Pulada — volta no fim da fila de hoje. Agendamento intacto.','ok');
+}
+// ===== LIMITE POR ASSUNTO NO DIA (07/11) =====
+// Matéria com muito erro (ex.: Economia) enchia o dia com o MESMO assunto (Balanço de
+// Pagamentos várias vezes). Teto de LIMITE_ASSUNTO_DIA questões por assunto
+// (matéria§subtema) por dia, contando as já respondidas hoje. O excedente não é
+// reagendado: continua vencido e entra nos próximos dias; a vaga vai para outro assunto.
+const LIMITE_ASSUNTO_DIA=3;
+async function limitarPorAssunto(fila,statsMap){
+  const inicio=new Date(today()+'T00:00:00').getTime();
+  const hoje=idbOk?await lerLog(inicio):[];
+  const porId=new Map(questions.map(q=>[q.id,q]));
+  const cont=new Map();
+  hoje.forEach(r=>{const q=porId.get(r.qid);const k=q?chaveAssunto(q):((r.materia||'—')+'§'+(r.subtema||'—'));cont.set(k,(cont.get(k)||0)+1);});
+  const cabe=q=>(cont.get(chaveAssunto(q))||0)<LIMITE_ASSUNTO_DIA;
+  let cortadas=0;const out=[];
+  for(const q of fila){if(cabe(q)){out.push(q);const k=chaveAssunto(q);cont.set(k,(cont.get(k)||0)+1);}else cortadas++;}
+  if(cortadas){
+    const naFila=new Set(out.map(q=>q.id));
+    const ehMan=q=>perfilAtivo()==='sefaz'&&!!(EDITAL.find(d=>d.m.includes((q.materia||'').trim()))||{}).man; // manutenção tem cota própria
+    const pool=ordenarRevisoes(questions.filter(q=>naSessao(q)&&!naFila.has(q.id)&&!ehMan(q)),statsMap||estatisticasPorAssunto());
+    for(const q of pool){if(!cortadas)break;if(!cabe(q))continue;out.push(q);const k=chaveAssunto(q);cont.set(k,(cont.get(k)||0)+1);cortadas--;}
+  }
+  return out;
 }
 // Favoritar NÃO mexe no SM-2 (nextDue/interval intactos) — só dá uma leve ajuda
 // de RANKING dentro do que já está vencido, em calcScore. O bônus encolhe sozinho
