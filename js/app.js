@@ -619,8 +619,79 @@ function extrairListasPontilhadas(linhas,tabelas){
   for(const p of pendentes)saida.push(p);
   return saida;
 }
+// ===== QUADROS ALINHADOS COM ESPAÇOS (07/11) =====
+// DRE/DFC do TEC às vezes vêm como texto com as colunas alinhadas por ESPAÇOS (não
+// por "|"). O renderizador junta as linhas e colapsa os espaços — o quadro vira uma
+// sopa ("800.000 (-) Custo das Mercadorias Vendidas (524.000) (=) Resultado…").
+// Aqui um bloco de 3+ linhas "rótulo ··· número" vira tabela: rótulo à esquerda (com o
+// recuo original) e os valores em colunas à direita. O alinhamento original era em
+// fonte proporcional (a contagem de espaços não diz a coluna): valor sozinho é total e
+// vai para a direita; subitens de um grupo cujo último traz o subtotal vão para dentro.
+function converterColunasAlinhadas(texto,tabelas){
+  const L=String(texto).split('\n');
+  const NUM=/^[*_\s]*[(\-−]?\s*R?\$?\s*[\d.,]+\s*\)?[*_\s]*%?$/;
+  const segs=l=>{const out=[];const re=/\S(?:.*?\S)?(?=[  ]{3,}|$)/g;let m;while((m=re.exec(l))){out.push({t:m[0],i:m.index,f:m.index+m[0].length});if(re.lastIndex===m.index)re.lastIndex++;}return out;};
+  const analisar=l=>{
+    const raw=l.replace(/ /g,' ');
+    if(!raw.trim())return null;
+    if(/^\s*[-–—_=]{6,}\s*$/.test(raw))return{sep:true};
+    let negrito=false,s=raw;
+    if(/^\s*\*\*.*\*\*\s*$/.test(s)){negrito=true;s=s.replace(/\*\*/g,'');}else if(/^\s*\*[^*].*[^*]\*\s*$/.test(s)){s=s.replace(/^(\s*)\*/,'$1').replace(/\*\s*$/,'');}
+    const sg=segs(s);if(!sg.length)return null;
+    const nums=[];let rot=null;
+    sg.forEach((g,k)=>{if(k>0&&NUM.test(g.t))nums.push(g);else if(k===0&&NUM.test(g.t)&&sg.length===1)nums.push(g);else rot=rot===null?g:{t:rot.t+' '+g.t,i:rot.i,f:g.f};});
+    return{rot:rot?rot.t:'',recuo:rot?rot.i:0,nums,negrito};
+  };
+  const out=[];let i=0;
+  while(i<L.length){
+    // bloco: linhas analisáveis consecutivas (linhas em branco no meio são toleradas)
+    let j=i,itens=[],comNum=0,brancos=0;
+    while(j<L.length){
+      const a=analisar(L[j]);
+      if(!a){if(L[j].trim()===''&&itens.length){brancos++;if(brancos>1)break;j++;continue;}break;}
+      if(!a.sep&&!a.nums.length&&(a.rot.length>70||/[.;:?]$/.test(a.rot)))break;
+      if(a.nums&&a.nums.length&&/[A-Za-zÀ-ú]{3}/.test(a.rot))comNum++; // linha com rótulo E valor
+      brancos=0;itens.push(a);j++;
+    }
+    if(comNum>=3&&itens.filter(a=>!a.sep).length>=4){
+      while(itens.length&&itens[itens.length-1].sep)itens.pop();
+      const nCol=Math.max(...itens.map(a=>a.nums?a.nums.length:0));
+      const escC=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const cel=t=>{let s=t.trim().replace(/^_+|_+$/g,'');let it=false;if(/^\*[^*].*\*$/.test(s)||/^\*\s*[\d(]/.test(s)&&/\*$/.test(s)){it=true;s=s.replace(/^\*\s*|\s*\*$/g,'');}s=escC(s);return it?'<em>'+s+'</em>':s;};
+      // Subitens (mesmo recuo, ou "•") de um grupo cujo último item traz o subtotal na
+      // coluna da direita: os valores soltos desse grupo são parciais — coluna de dentro.
+      if(nCol>1){
+        let k=0;
+        while(k<itens.length){
+          const ehSub=a=>a&&!a.sep&&(a.recuo>0||/^[•·\-–]\s/.test(a.rot));
+          if(!ehSub(itens[k])){k++;continue;}
+          let f=k;while(f+1<itens.length&&ehSub(itens[f+1])&&itens[f+1].recuo===itens[k].recuo)f++;
+          if(itens.slice(k,f+1).some(a=>a.nums.length===nCol))itens.slice(k,f+1).forEach(a=>{if(a.nums.length===1)a.parcial=true;});
+          k=f+1;
+        }
+      }
+      const rows=itens.map(a=>{
+        if(a.sep)return'<tr><td colspan="'+(nCol+1)+'" style="border-top:1px solid var(--border2);padding:0;height:4px"></td></tr>';
+        const cols=new Array(nCol).fill('');
+        if(a.nums.length===nCol)a.nums.forEach((g,c)=>cols[c]=cel(g.t));
+        else if(a.parcial)cols[0]=cel(a.nums[0].t);
+        else a.nums.forEach((g,k)=>{cols[nCol-a.nums.length+k]=cel(g.t);}); // valor solto = total, coluna da direita (convenção de DRE/DFC)
+        const pad=Math.min(4,Math.round(a.recuo/4))*14+6;
+        const fw=a.negrito?'font-weight:700;':'';
+        return'<tr><td style="padding:3px 8px 3px '+pad+'px;'+fw+'">'+cel(a.rot)+'</td>'+cols.map(v=>'<td style="padding:3px 10px;text-align:right;white-space:nowrap;'+fw+'">'+v+'</td>').join('')+'</tr>';
+      }).join('');
+      out.push('\u0003TBL'+tabelas.length+'\u0003');
+      tabelas.push('<table class="tbl-alinhada" style="border-collapse:collapse;width:100%;margin:10px 0;font-size:12.5px;color:var(--ink)">'+rows+'</table>');
+      i=j;continue;
+    }
+    out.push(L[i]);i++;
+  }
+  return out.join('\n');
+}
+
 function extrairTabelasComoHtml(texto){
   const tabelas=[];
+  texto=converterColunasAlinhadas(texto,tabelas); // quadros alinhados por espaços (DRE/DFC)
   const linhas=extrairListasPontilhadas(reconstruirTabelaEmLinhasSoltas(String(texto).split('\n')),tabelas);
   const saida=[];
   let bufer=[];
@@ -641,8 +712,12 @@ function extrairTabelasComoHtml(texto){
       const linhasHtml=linhasCel.map((cels,i)=>{
         if(!cels)return'<tr><td colspan="'+nCols+'" style="padding:7px 12px;font-size:12px;border:1px solid var(--border);color:var(--ink);font-weight:600">'+escCel(bufer[i].slice(1))+'</td></tr>';
         const tds=[];
-        for(let c=0;c<nCols;c++){
-          const conteudo=escCel(cels[c]||'');
+        // Cabeçalho agrupado ("São Paulo | Pernambuco" sobre 4 colunas): linha com menos
+        // células que a tabela, em número que divide as colunas, ganha colspan.
+        const span=(cels.length>1&&cels.length<nCols&&nCols%cels.length===0)?nCols/cels.length:1;
+        for(let c=0;c<nCols;c+=span){
+          const conteudo=escCel(cels[c/span]||'');
+          if(span>1){tds.push((i===0?'<th colspan="'+span+'" style="background:#1e2338;color:#fff;padding:8px 12px;font-size:12px;text-align:center;border:1px solid #2c3352">':'<td colspan="'+span+'" style="padding:7px 12px;font-size:12px;border:1px solid var(--border);color:var(--ink);text-align:center">')+conteudo+(i===0?'</th>':'</td>'));continue;}
           tds.push(i===0
             ?'<th style="background:#1e2338;color:#fff;padding:8px 12px;font-size:12px;text-align:left;border:1px solid #2c3352">'+conteudo+'</th>'
             :'<td style="padding:7px 12px;font-size:12px;border:1px solid var(--border);color:var(--ink)">'+conteudo+'</td>');
@@ -752,6 +827,30 @@ function extrairFormulasTec(texto){
     return'\u0005FORM'+(formulas.length-1)+'\u0005';
   });
   return{texto:out.join('\n\n'),formulas};
+}
+// ===== ALTERNATIVA QUE É LINHA DE TABELA (07/11) =====
+// Questões em que o enunciado termina num cabeçalho de quadro ("Sujeito Passivo |
+// Alíquota | Sujeito Passivo | Alíquota") e cada alternativa preenche as colunas: o
+// import perdeu os "|" da alternativa ("A DIFAL B Al"). Se a alternativa tem
+// exatamente tantos termos curtos quanto o quadro tem colunas, ela vira uma linha.
+const _colsFinalCache=new Map();
+function colunasDoQuadroFinal(q){
+  if(_colsFinalCache.has(q.id))return _colsFinalCache.get(q.id);
+  const L=String(q.questao||'').split('\n').map(l=>l.trim()).filter(Boolean);
+  const ult=L[L.length-1]||'';
+  const n=/\|/.test(ult)?ult.split(/\s*\|\s*/).filter(x=>x!=='').length:0;
+  _colsFinalCache.set(q.id,n);return n;
+}
+function _partesAlt(t){t=String(t||'').trim();return /\|/.test(t)?t.split(/\s*\|\s*/):t.split(/\s+/);}
+function altComoLinhaDeTabela(q,txt){
+  const n=colunasDoQuadroFinal(q);if(n<2)return null;
+  // vale só se TODAS as alternativas têm n termos curtos e nenhum é palavra de ligação
+  // ("I e II", "apenas III" continuam como texto)
+  const LIG=/^(e|a|o|ou|de|do|da|apenas|somente|nem|com|sem)$/; // minúsculas: "A"/"B" maiúsculos são rótulos (empresa A)
+  const ok=p=>p.length===n&&p.every(x=>x&&x.length<=18&&!LIG.test(x));
+  if(!(q.alternativas||[]).every(a=>ok(_partesAlt(a))))return null;
+  const partes=_partesAlt(txt);if(!ok(partes))return null;
+  return '<table style="border-collapse:collapse;width:100%;table-layout:fixed"><tr>'+partes.map(p=>'<td style="border:1px solid var(--border2);padding:5px 8px;text-align:center;font-size:13px">'+esc(p)+'</td>').join('')+'</tr></table>';
 }
 function formatQuestionText(text){
   if(!text)return'';
@@ -2165,7 +2264,7 @@ function showCard(){
   const favBtn=document.getElementById('fc-fav-btn');
   if(favBtn){favBtn.textContent=q.favorita?'★':'☆';favBtn.style.color=q.favorita?'var(--yellow-text)':'var(--muted)';favBtn.title=q.favorita?'Remover dos favoritos':'Favoritar — leve preferência na fila, sem furar o agendamento do SM-2';}
   document.getElementById('fc-q').innerHTML=formatQuestionText(q.questao);
-  document.getElementById('fc-alts').innerHTML=shuffled.map((alt,i)=>`<button class="alt-btn" onclick="marcarAlternativa(${i})" ondblclick="descartarAlternativa(${i})" id="alt-${i}" data-orig="${String.fromCharCode(65+(alt.orig||0))}"><div class="alt-letter">${String.fromCharCode(65+i)}</div><div>${formatQuestionText(alt.txt)}</div></button>`).join('');
+  document.getElementById('fc-alts').innerHTML=shuffled.map((alt,i)=>`<button class="alt-btn" onclick="marcarAlternativa(${i})" ondblclick="descartarAlternativa(${i})" id="alt-${i}" data-orig="${String.fromCharCode(65+(alt.orig||0))}"><div class="alt-letter">${String.fromCharCode(65+i)}</div><div style="flex:1">${altComoLinhaDeTabela(q,alt.txt)||formatQuestionText(alt.txt)}</div></button>`).join('');
   altSelecionada=null;
   const confirmWrap=document.getElementById('alt-confirm-wrap');
   if(confirmWrap)confirmWrap.style.display='block';
