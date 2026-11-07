@@ -1,0 +1,18 @@
+# Site estático: nada a compilar, publica a raiz do repositório.
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+# O service worker precisa ser sempre buscado de novo, senão o app instalado
+# no celular ficaria preso numa versão antiga.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# Deploy Previews (a "cópia" que o Netlify publicava a cada envio para o PR) gastavam
+# créditos em dobro. Esta regra faz o Netlify pular só essas cópias: "exit 0" diz a ele
+# que não há nada a publicar ali. A publicação principal (Production), que é o site,
+# não é afetada e segue publicando a cada envio.
+[context.deploy-preview]
+  ignore = "exit 0"
