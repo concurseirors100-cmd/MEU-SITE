@@ -3,7 +3,7 @@
 // Estratégia "rede primeiro": com internet, sempre busca a versão nova (assim uma
 // atualização publicada chega sem precisar limpar nada); sem internet, usa a última
 // cópia guardada. Os DADOS de estudo não passam por aqui — vivem no IndexedDB.
-const CACHE = 'questia-v9';
+const CACHE = 'questia-v10';
 const ESSENCIAIS = [
   './', './index.html', './css/style.css',
   './js/caixinhas.js', './js/app.js', './js/lupa.js', './js/variante.js', './js/perfil.js', './js/calculadora-revisao.js', './js/dashboard.js', './js/formulas.js',
