@@ -224,13 +224,39 @@ async function aplicarLoteFrag(d){
 function somarDiasYmd(n){const d=new Date();d.setDate(d.getDate()+n);return ymd(d);}
 function fragVencido(f){return !f.nextDue||f.nextDue<=today();}
 let fragFila=[],fragIdx=0,fragResp=null,fragSess={ok:0,er:0};
+// Irmãos de erro: um item do mesmo dispositivo de cada erro dos últimos
+// FRAG_IRMA_JANELA dias, não respondido ontem/hoje — entra antes do prazo dele.
+function fragIrmasDeErro(jaNaFila){
+  const lim=somarDiasYmd(-FRAG_IRMA_JANELA), recente=somarDiasYmd(-1);
+  const errPorDisp=new Map();
+  fragmentos.forEach(f=>{if(f.ultima==='erro'&&f.ultimaEm&&f.ultimaEm>=lim){if(!errPorDisp.has(f.dispositivo))errPorDisp.set(f.dispositivo,new Set());errPorDisp.get(f.dispositivo).add(f.id);}});
+  const out=[];
+  errPorDisp.forEach((ids,disp)=>{
+    const c=fragmentos.find(g=>g.dispositivo===disp&&!ids.has(g.id)&&!jaNaFila.has(g.id)&&g.ultima!=='erro'&&!(g.ultimaEm&&g.ultimaEm>=recente));
+    if(c)out.push(c);
+  });
+  return out;
+}
 function fragMontarFila(){
   const venc=fragmentos.filter(fragVencido);
   const errados=venc.filter(f=>f.ultima==='erro'),novos=venc.filter(f=>!f.reps&&f.ultima!=='erro'),resto=venc.filter(f=>f.reps&&f.ultima!=='erro');
   resto.sort((a,b)=>String(a.nextDue).localeCompare(String(b.nextDue)));
   // intercala por dispositivo para não emendar 10 itens do mesmo artigo
-  const base=[...errados,...resto,...novos];const porDisp=new Map();
-  base.forEach(f=>{const k=f.dispositivo;if(!porDisp.has(k))porDisp.set(k,[]);porDisp.get(k).push(f);});
+  const irmas=fragIrmasDeErro(new Set(venc.map(f=>f.id)));
+  const base=[...errados,...irmas,...resto,...novos];
+  // 12/11: a mesma questão de origem rendia 3–5 itens que saíam quase colados (um
+  // entregava o outro). Por sessão: no máximo 1 item por questão de origem e 2 por
+  // dispositivo; o resto fica vencido para as próximas sessões.
+  const chaveOrig=f=>f.qid!=null?'q'+f.qid:'d'+f.dispositivo;
+  const usadosO=new Set(),nDisp=new Map(),escolhidos=[];
+  for(const f of base){
+    if(escolhidos.length>=LUPA_SESSAO_MAX)break;
+    const o=chaveOrig(f),d=f.dispositivo;
+    if(usadosO.has(o)||(nDisp.get(d)||0)>=2)continue;
+    usadosO.add(o);nDisp.set(d,(nDisp.get(d)||0)+1);escolhidos.push(f);
+  }
+  const porDisp=new Map();
+  escolhidos.forEach(f=>{const k=f.dispositivo;if(!porDisp.has(k))porDisp.set(k,[]);porDisp.get(k).push(f);});
   const out=[];let restou=true;
   while(restou&&out.length<LUPA_SESSAO_MAX){restou=false;for(const arr of porDisp.values()){if(arr.length){out.push(arr.shift());restou=true;if(out.length>=LUPA_SESSAO_MAX)break;}}}
   return out;
@@ -277,11 +303,16 @@ function lupaResponder(i){
       ?`<button class="btn btn-outline btn-sm" onclick="lupaAvaliar('duvida')">~ Acertei na dúvida <span class="lupa-k">2</span></button><button class="btn btn-primary btn-sm" onclick="lupaAvaliar('sabia')">✓ Sabia → <span class="lupa-k">Enter</span></button>`
       :`<button class="btn btn-primary btn-sm" onclick="lupaAvaliar('erro')">Próximo → <span class="lupa-k">Enter</span></button>`}</div>`;
 }
-// Agendamento próprio e simples (não usa o SM-2 das questões): errou volta amanhã;
-// acertou na dúvida cresce devagar; sabia cresce ×2,5 (3 → 8 → 20 → 50 dias…).
+// Agendamento próprio e simples (não usa o SM-2 das questões).
+// 12/11 (pedido do Anderson): o erro voltava no DIA SEGUINTE — errava 15, no outro
+// dia via as mesmas 15 com a resposta fresca e acertava de memória curta. Agora:
+// errou → o MESMO item só volta em FRAG_ERRO_ESPERA dias; no meio-tempo a sessão
+// traz um item IRMÃO (mesmo dispositivo, outro enunciado), que treina a regra sem
+// a resposta decorada. Acertou na dúvida cresce devagar; sabia cresce ×2,5.
+const FRAG_ERRO_ESPERA=4, FRAG_IRMA_JANELA=FRAG_ERRO_ESPERA;
 function fragAgendar(f,res){
   const iv=f.interval||0;let n;
-  if(res==='erro'){n=1;f.erros=(f.erros||0)+1;f.reps=0;}
+  if(res==='erro'){n=FRAG_ERRO_ESPERA;f.erros=(f.erros||0)+1;f.reps=0;}
   else{
     f.acertos=(f.acertos||0)+1;
     if(res==='duvida')n=Math.max(1,Math.round(iv*1.3)||1);
