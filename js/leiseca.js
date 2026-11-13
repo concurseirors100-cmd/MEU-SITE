@@ -29,8 +29,117 @@ const LS_LEIS=[
   {k:'LC 214/2025',nome:'LC 214/2025 (IBS/CBS/IS)',url:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp214.htm'},
   {k:'LC 227/2026',nome:'LC 227/2026 (Comitê Gestor, ITCMD)',url:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp227.htm'},
   {k:'EC 132/2023',nome:'EC 132/2023',url:'https://www.planalto.gov.br/ccivil_03/constituicao/emendas/emc/emc132.htm'},
-  {k:'Lei 6.830/1980',nome:'Lei 6.830/1980 (execução fiscal)',url:'https://www.planalto.gov.br/ccivil_03/leis/l6830.htm'}
+  {k:'Lei 6.830/1980',nome:'Lei 6.830/1980 (execução fiscal)',url:'https://www.planalto.gov.br/ccivil_03/leis/l6830.htm'},
+  {k:'ADCT',nome:'ADCT',url:'https://www.planalto.gov.br/ccivil_03/constituicao/ConstituicaoCompilado.htm'},
+  {k:'LC 116/2003',nome:'LC 116/2003 (ISS)',url:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm'},
+  {k:'LC 24/1975',nome:'LC 24/1975 (benefícios de ICMS)',url:''},
+  {k:'LC 123/2006',nome:'LC 123/2006 (Simples Nacional)',url:''},
+  {k:'Lei 8.429/1992',nome:'Lei 8.429/1992 (improbidade)',url:'https://www.planalto.gov.br/ccivil_03/leis/l8429.htm'},
+  {k:'Lei 14.133/2021',nome:'Lei 14.133/2021 (licitações)',url:'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/L14133.htm'},
+  {k:'Lei 9.784/1999',nome:'Lei 9.784/1999 (processo administrativo)',url:''},
+  {k:'Lei 12.527/2011',nome:'Lei 12.527/2011 (acesso à informação)',url:''}
 ];
+// ---------- quais artigos uma questão cita (14/11) ----------
+// A detecção da revisão com variante (varDispDe) fica com UM artigo por questão e
+// trata como CTN todo "art. N" de Direito Tributário sem lei por perto. Medido no
+// banco: 74 das 103 questões erradas de Tributário citam mais de um artigo, e quase
+// metade das citações não tinha a lei ao lado (muitas eram da Constituição). Aqui a
+// Lei seca usa uma leitura própria: TODOS os artigos citados no comentário, cada um
+// com a lei mais provável. A varDispDe não muda (a fila e as variantes dependem dela).
+const LS_NUM='(?:n[ºo°.]*\\s*)?';
+const LS_RX_LEIS=[
+  [/\bCTN\b|c[óo]digo tribut[áa]rio(?! municipal| estadual| do munic| do estado)|5\.172/i,'CTN'],
+  [/\bADCT\b|disposi[çc][õo]es constitucionais transit/i,'ADCT'],
+  [new RegExp('(?:\\bLC|complementar)\\s*'+LS_NUM+'214\\b|214\\/2025','i'),'LC 214/2025'],
+  [new RegExp('(?:\\bLC|complementar)\\s*'+LS_NUM+'227\\b|227\\/2026','i'),'LC 227/2026'],
+  [new RegExp('(?:\\bEC|emenda constitucional)\\s*'+LS_NUM+'132\\b','i'),'EC 132/2023'],
+  [/\bCF\b|CF\/88|\bCRFB\b|constitui[çc][ãa]o(?! estadual| do estado)/i,'CF/88'],
+  [new RegExp('(?:\\bLC|complementar)\\s*'+LS_NUM+'87\\b|kandir','i'),'LC 87/1996'],
+  [/6\.830|\bLEF\b/i,'Lei 6.830/1980'],
+  [new RegExp('(?:\\bLC|complementar)\\s*'+LS_NUM+'116\\b','i'),'LC 116/2003'],
+  [new RegExp('(?:\\bLC|complementar)\\s*'+LS_NUM+'24\\b','i'),'LC 24/1975'],
+  [new RegExp('(?:\\bLC|complementar)\\s*'+LS_NUM+'123\\b','i'),'LC 123/2006'],
+  [/8\.429|\bLIA\b/i,'Lei 8.429/1992'],
+  [/14\.133/,'Lei 14.133/2021'],
+  [/9\.784/,'Lei 9.784/1999'],
+  [/12\.527|\bLAI\b/,'Lei 12.527/2011']
+];
+const LS_PADRAO_MAT=[[/^Direito Tributário$/,'CTN'],[/^Reforma Tributária$/,'LC 214/2025'],[/^Direito Constitucional \(/,'CF/88']];
+// primeira (ou última) lei citada num trecho
+function lsLeiEm(t,ultima){
+  let best=null,pos=ultima?-1:1e9;
+  for(const [rx,k] of LS_RX_LEIS){
+    if(ultima){const g=new RegExp(rx.source,rx.flags.includes('g')?rx.flags:rx.flags+'g');let m;while((m=g.exec(t))){if(m.index>pos){pos=m.index;best=k;}if(!m[0].length)g.lastIndex++;}}
+    else{const m=rx.exec(t);if(m&&m.index<pos){pos=m.index;best=k;}}
+  }
+  return best;
+}
+const lsArtCache=new Map();
+// Devolve [{k:'CF/88, art. 150',p:peso}], do mais citado para o menos, no máximo `max`.
+function lsArtigosDe(q,max){
+  if(!q)return[];
+  let lista=lsArtCache.get(q.id);
+  if(!lista){
+    const limpa=x=>String(x||'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ');
+    const mat=(q.materia||'').trim();
+    const pad=(LS_PADRAO_MAT.find(([rx])=>rx.test(mat))||[])[1]||null;
+    const cont=new Map();let ordem=0;
+    const ler=(texto,peso)=>{
+      const t=limpa(texto);if(!t.trim())return;
+      const rx=/\bart(?:igo)?s?\.?\s*(\d{1,3}(?:-[A-Z])?)\s*(?:º|°|o\b)?((?:\s*(?:,|e|a)\s+(?:o\s+)?\d{1,3}(?:-[A-Z])?\s*(?:º|°)?(?![\d.]*\s*(?:%|de \d|dias|anos|meses)))*)/gi;
+      let m,ultimaLei=null;const leiDoNum=new Map();
+      while((m=rx.exec(t))){
+        const fim=m.index+m[0].length;
+        const depois=t.slice(fim,fim+110),antes=t.slice(Math.max(0,m.index-70),m.index);
+        // 1) "art. 150, VI, a, da CF": lei logo depois, antes de outro artigo ou do fim da frase
+        const perto=depois.split(/\bart(?:igo)?s?\.?\s*\d|[.;]\s+[A-ZÀ-Ú]|\n/)[0];
+        let lei=/^[\s,;§º°\dIVXLa-z"“”'()–-]{0,45}?\b(?:d[aoe]s?|na|no|em seu|todos? d[ao])\b/i.test(perto)?lsLeiEm(perto.slice(0,90)):null;
+        // 2) "CTN, art. 138" / "a CF, em seu art. 150": lei logo antes
+        if(!lei){const a=antes.split(/[.;]\s+[A-ZÀ-Ú]|\n/).pop();lei=lsLeiEm(a.slice(-45),true);}
+        // 3) a lei mais próxima na mesma frase
+        if(!lei)lei=lsLeiEm(perto)||lsLeiEm(antes.split(/[.;]\s+[A-ZÀ-Ú]|\n/).pop(),true);
+        const explicita=!!lei;
+        // 4) o mesmo número já veio com lei neste texto ("art. 150 da CF ... art. 150, § 2º")
+        if(!lei)lei=leiDoNum.get(m[1])||null;
+        // 5) a última lei citada no texto; 6) a da matéria
+        if(!lei)lei=ultimaLei||lsLeiEm(t.slice(0,m.index),true)||pad;
+        if(!lei)continue;
+        ultimaLei=lei;if(explicita)leiDoNum.set(m[1],lei);
+        const nums=[m[1]];(m[2].match(/\d{1,3}(?:-[A-Z])?/g)||[]).forEach(n=>nums.push(n));
+        // parágrafo/inciso citado junto ("art. 150, VI, a" · "§ 2º do art. 150"): vira destaque no texto
+        const marcas=[];
+        if(nums.length===1){
+          const cab=perto.split(/\b(?:d[aoe]s?|na|no)\s+(?:CTN|CF|Constitui|Lei|LC|C[óo]digo|ADCT|EC|Emenda)/i)[0].slice(0,48);
+          const iPar=cab.search(/§|par[áa]grafo/i);
+          let r;const rxR=/(?:^|[,\s(])([IVXL]{1,7})(?=[,\s.;)]|$)/g;
+          while((r=rxR.exec(iPar<0?cab:cab.slice(0,iPar))))marcas.push('i'+r[1]);
+          const rxP=/§+\s*(\d{1,2})/g;while((r=rxP.exec(cab)))marcas.push('§'+r[1]);
+          if(/par[áa]grafo [úu]nico/i.test(cab))marcas.push('pu');
+          const at=antes.match(/(?:§\s*(\d{1,2})\s*[ºo°]?|inciso\s+([IVXL]{1,7})|(par[áa]grafo [úu]nico))[^.;]{0,22}$/i);
+          if(at)marcas.push(at[1]?'§'+at[1]:at[2]?'i'+at[2].toUpperCase():'pu');
+        }
+        nums.forEach(n=>{const k=lei+', art. '+n.toUpperCase();const o=cont.get(k)||{k,p:0,o:ordem++,m:new Set()};o.p+=peso;marcas.forEach(x=>o.m.add(x));cont.set(k,o);});
+      }
+    };
+    ler(q.comentario,2);ler(q.gabTexto,1);ler(q.questao,1);ler((q.alternativas||[]).join(' \n '),1);
+    lista=[...cont.values()].sort((a,b)=>(b.p-a.p)||(a.o-b.o));
+    lsArtCache.set(q.id,lista);
+  }
+  return max?lista.slice(0,max):lista;
+}
+const LS_MAX_ART_Q=4;      // artigos por questão que viram card
+// Para um assunto sem artigo nas questões erradas: os artigos mais citados por TODAS
+// as questões daquele assunto no banco (o recorte sai do próprio material).
+function lsArtigosDoAssunto(mat,sub){
+  const cont=new Map();let n=0;
+  questions.forEach(q=>{
+    if(((q.materia||'—').trim()||'—')!==mat||((q.subtema||'—').trim()||'—')!==sub)return;
+    n++;
+    lsArtigosDe(q,LS_MAX_ART_Q).forEach(a=>{const o=cont.get(a.k)||{c:0,m:new Set()};o.c++;a.m.forEach(x=>o.m.add(x));cont.set(a.k,o);});
+  });
+  const arts=[...cont.entries()].filter(([k,o])=>o.c>=2).sort((a,b)=>b[1].c-a[1].c).slice(0,6).map(([k,o])=>Object.assign({k,c:o.c,m:o.m},lsSepararChave(k)));
+  return{n,arts};
+}
 const lsLeiInfo=k=>LS_LEIS.find(l=>l.k===k)||{k,nome:k,url:''};
 
 let lsTextos={},lsTextosOk=false;
@@ -78,6 +187,7 @@ function lsLeiCarregada(k){return lsTextos[k]||lsEmbutidas[k]||null;}
 function lsLeisDoGrupo(g){
   if(g.lei==='EC 132/2023')return['EC 132/2023','CF/88','ADCT'];
   if(g.lei==='CF/88')return['CF/88','ADCT'];
+  if(g.lei==='ADCT')return['ADCT'];
   return[g.lei];
 }
 function lsMarcas(){try{const v=JSON.parse(localStorage.getItem(LS_MARCAS_KEY)||'{}');return v&&typeof v==='object'?v:{};}catch(e){return{};}}
@@ -246,12 +356,15 @@ async function lsColetar(){
     const er=q.erros||0;
     if(!er&&!lg.dif)return;
     const mat=(q.materia||'—').trim()||'—';
-    const d=(typeof varDispDe==='function')?varDispDe(q):null;
-    const temArt=d&&lsSepararChave(d);
-    const g=temArt?get(d,'art',mat):get('ass:'+mat+'§'+((q.subtema||'—').trim()||'—'),'ass',mat,((q.subtema||'').trim()||'(sem subtema)'));
-    g.qs.push({q,erros:er,dif:lg.dif,ult:lg.ult});
-    g.erros+=er;g.dif+=lg.dif;if(lg.ult>g.ult)g.ult=lg.ult;
-    if(typeof ehLeech==='function'&&ehLeech(q))g.leech++;
+    const arts=lsArtigosDe(q,LS_MAX_ART_Q).filter(a=>lsSepararChave(a.k));
+    const sub=(q.subtema||'—').trim()||'—';
+    const gs=arts.length?arts.map(a=>{const g=get(a.k,'art',mat);(g.marc||(g.marc=new Set()));a.m.forEach(x=>g.marc.add(x));return g;}):[get('ass:'+mat+'§'+sub,'ass',mat,((q.subtema||'').trim()||'(sem subtema)'))];
+    gs.forEach(g=>{
+      if(g.tipo==='ass'){g.matNome=mat;g.subNome=sub;}
+      g.qs.push({q,erros:er,dif:lg.dif,ult:lg.ult});
+      g.erros+=er;g.dif+=lg.dif;if(lg.ult>g.ult)g.ult=lg.ult;
+      if(typeof ehLeech==='function'&&ehLeech(q))g.leech++;
+    });
   });
   (typeof fragmentos!=='undefined'?fragmentos:[]).forEach(f=>{
     if(!(f.erros>0))return;
@@ -262,6 +375,7 @@ async function lsColetar(){
     const ue=(f.hist||[]).filter(h=>h.r==='erro').map(h=>h.d).sort().pop();
     if(ue){const t=lsDiaTs(ue);if(t>g.ult)g.ult=t;}
   });
+  // regra frágil vem da detecção antiga (1 artigo por questão): marca o card se a chave bater
   const marcas=lsMarcas();
   const lista=[...G.values()].map(g=>{
     const m=marcas[g.k]||{};
@@ -280,23 +394,29 @@ async function lsColetar(){
 // ---------- desenho ----------
 function lsFmtData(ts){if(!ts)return'';const d=new Date(ts);return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');}
 function lsTextoArtigo(lei,art){const t=lsLeiCarregada(lei);return t&&t.arts?t.arts[art]:undefined;}
-// Destaques: parágrafos citados nos itens da Lupa errados daquele artigo.
+// Destaques: parágrafos e incisos citados nas questões erradas e nos itens da Lupa
+// errados daquele artigo ('§2', 'pu' = parágrafo único, 'iVI' = inciso VI do caput).
 function lsMarcasDeParagrafo(g){
-  const s=new Set();
+  const s=new Set(g&&g.marc?g.marc:[]);
   (g?g.frags:[]).forEach(f=>{
-    const d=String(f.dispositivo||'');
+    const d=String(f.dispositivo||'').replace(/^.*?art\.?\s*\d+(?:-[A-Z])?\s*[ºo°]?/i,'');
     let m;const rx=/§\s*(\d+)/g;while((m=rx.exec(d)))s.add('§'+m[1]);
     if(/par[aá]grafo [úu]nico/i.test(d))s.add('pu');
+    const ip=d.search(/§|par[aá]grafo/i),rr=/(?:^|[,\s])([IVXL]{1,7})(?=[,\s.;)]|$)/g;
+    while((m=rr.exec(ip<0?d:d.slice(0,ip))))s.add('i'+m[1]);
   });
   return s;
 }
-function lsHtmlArtigo(txt,g){
-  const dest=lsMarcasDeParagrafo(g);
+function lsHtmlArtigo(txt,dest){
+  dest=dest||new Set();let passouPar=false;
   return String(txt).split('\n').map(l=>{
     let cls='ls-l',h=esc(l);
-    const mp=l.match(/^§\s*(\d+)/);
+    const mp=l.match(/^§\s*(\d+)/),pu=/^Par[aá]grafo [úu]nico/i.test(l);
+    if(mp||pu)passouPar=true;
     if(mp&&dest.has('§'+mp[1]))cls+=' ls-dest';
-    if(/^Par[aá]grafo [úu]nico/i.test(l)&&dest.has('pu'))cls+=' ls-dest';
+    if(pu&&dest.has('pu'))cls+=' ls-dest';
+    const mi=!passouPar&&l.match(/^([IVXL]{1,7})\s*[-–]/);
+    if(mi&&dest.has('i'+mi[1]))cls+=' ls-dest';
     h=h.replace(/^(Art\.?\s*[\d.]+\s*(?:º|°|o)?(?:\s*[-–]\s*[A-Z])?\.?|§\s*\d+\s*(?:º|°|o)?\.?|Par[aá]grafo [úu]nico\.?)/,'<b>$1</b>');
     return `<div class="${cls}">${h}</div>`;
   }).join('');
@@ -344,12 +464,24 @@ function lsCorpoGrupo(g){
     if(blocos.length){
       blocos.forEach((b,i)=>{
         const rot=(b.k!==g.lei||blocos.length>1)?`<div class="ls-fonte">${esc(b.k)}, art. ${esc(g.art)}</div>`:'';
-        if(i===0)h+=`${rot}<div class="ls-artigo">${lsHtmlArtigo(b.txt,g)}</div>`;
+        if(i===0)h+=`${rot}<div class="ls-artigo">${lsHtmlArtigo(b.txt,lsMarcasDeParagrafo(g))}</div>`;
         else h+=`<details class="ls-outra"><summary>Ver também: ${esc(b.k)}, art. ${esc(g.art)}</summary><div class="ls-artigo">${lsHtmlArtigo(b.txt,null)}</div></details>`;
       });
     }
     else if(lsLeiCarregada(g.lei))h+=`<div class="ls-aviso">O texto de ${esc(g.lei)} não tem o art. ${esc(g.art)} (pode estar revogado, ou ser artigo de outra lei citado no comentário).${info.url?` <a href="${esc(info.url)}" target="_blank" rel="noopener">Abrir a lei no Planalto ↗</a>`:''}</div>`;
     else h+=`<div class="ls-aviso">O texto de <b>${esc(g.lei)}</b> não está no site${lsTemTexto(g.lei)?' (não consegui baixar agora; tente de novo com internet)':''}. ${info.url?`<a href="${esc(info.url)}" target="_blank" rel="noopener">Abrir a lei no Planalto ↗</a> · `:''}<a href="#" onclick="lsAba('textos');return false">Colar o texto</a></div>`;
+  }
+  if(g.tipo==='ass'){
+    const s=g.sug||(g.sug=lsArtigosDoAssunto(g.matNome,g.subNome));
+    if(s.arts.length){
+      h+=`<div class="ls-sec">Artigos mais citados neste assunto <span style="text-transform:none;font-weight:400">(nas ${s.n} questões do banco)</span></div>`;
+      s.arts.forEach((a,i)=>{
+        const txt=lsTextoArtigo(a.lei,a.art),info=lsLeiInfo(a.lei);
+        const corpo=txt!==undefined?`<div class="ls-artigo">${lsHtmlArtigo(txt,a.m)}</div>`
+          :`<div class="ls-aviso">${lsTemTexto(a.lei)?`O texto de ${esc(a.lei)} não tem o art. ${esc(a.art)} (pode estar revogado).`:`O texto de <b>${esc(a.lei)}</b> não está no site.`}${info.url?` <a href="${esc(info.url)}" target="_blank" rel="noopener">Abrir no Planalto ↗</a>`:''}</div>`;
+        h+=`<details class="ls-outra"${i<2&&txt!==undefined?' open':''}><summary>${esc(a.k)} <span class="ls-n">· citado em ${a.c} questões</span></summary>${corpo}</details>`;
+      });
+    }else h+=`<div class="ls-aviso">As questões deste assunto não citam artigo de lei nos comentários${s.n?` (${s.n} no banco)`:''}. Fica o comentário do professor em cada questão abaixo.</div>`;
   }
   h+=lsHtmlErros(g);
   const kk=esc(g.k).replace(/'/g,'&#39;');
@@ -379,9 +511,12 @@ async function lsAoAbrir(det){
   const corpo=det.querySelector(':scope > .ls-corpo');if(!corpo||corpo.dataset.ok)return;
   const g=lsPorChave.get(det.dataset.k);if(!g)return;
   corpo.dataset.ok='1';
-  if(g.tipo==='art'&&lsLeisDoGrupo(g).some(k=>!lsLeiCarregada(k)&&lsIndice&&lsIndice[k])){
+  let leis=[];
+  if(g.tipo==='art')leis=lsLeisDoGrupo(g);
+  else{g.sug=g.sug||lsArtigosDoAssunto(g.matNome,g.subNome);leis=[...new Set(g.sug.arts.map(a=>a.lei))];}
+  if(leis.some(k=>!lsLeiCarregada(k)&&lsIndice&&lsIndice[k])){
     corpo.innerHTML='<div class="lupa-sub">Carregando o texto da lei…</div>';
-    await Promise.all(lsLeisDoGrupo(g).map(lsGarantirLei));
+    await Promise.all(leis.map(lsGarantirLei));
   }
   corpo.innerHTML=lsCorpoGrupo(g);
 }
@@ -410,7 +545,7 @@ function lsAtualizarContadores(){
   el.innerHTML=`<div><b>${arts.length}</b><span>artigos com erro ou Difícil</span></div>
     <div><b>${lsGrupos.filter(g=>g.pend).length}</b><span>ainda não lidos</span></div>
     <div><b>${lsGrupos.filter(g=>g.ne).length}</b><span>não entendi</span></div>
-    <div><b>${ass.length}</b><span>assuntos sem artigo identificado</span></div>`;
+    <div><b>${ass.length}</b><span>assuntos sem artigo nas questões erradas</span></div>`;
 }
 function lsAba(a){LSV.aba=a;LSV.mais=false;renderLeiSeca();}
 function lsSet(k,v){LSV[k]=v;LSV.mais=false;renderLeiSeca(true);}
@@ -434,6 +569,7 @@ function lsHtmlErrosView(){
   const semTexto=[...new Set(lsGrupos.filter(g=>g.tipo==='art'&&!lsTemTexto(g.lei)).map(g=>g.lei))];
   return `<div class="lupa-nums ls-cont" id="ls-cont"></div>
     ${semTexto.length?`<div class="ls-aviso" style="margin-bottom:12px">Sem texto no site: <b>${semTexto.map(esc).join(', ')}</b>. Os cards dessas leis mostram só as questões e o link. <a href="#" onclick="lsAba('textos');return false">Colar o texto</a></div>`:''}
+    <div class="lupa-sub" style="margin:0 0 10px">Trecho com fundo amarelo = parágrafo ou inciso citado nas suas questões erradas.</div>
     <div class="ls-filtros">
       ${chips.map(([v,r])=>`<button class="chip ${LSV.filtro===v?'active':''}" onclick="lsSet('filtro','${v}')">${r}</button>`).join('')}
       <select class="config-select" onchange="lsSet('mat',this.value)" style="min-width:150px"><option value="">Todas as matérias</option>${mats.map(m=>`<option value="${esc(m)}" ${LSV.mat===m?'selected':''}>${esc(m)}</option>`).join('')}</select>
@@ -474,7 +610,7 @@ function lsHtmlTextosView(){
       </div>
       <textarea id="ls-imp-txt" class="ls-ta" placeholder="Cole aqui o texto da lei inteira…" oninput="lsAoColar()"></textarea>
       <button class="btn btn-primary" onclick="lsImportarTexto()">Importar texto</button>
-      <div class="lupa-sub">Um artigo só aparece em “Meus erros” com o texto se a detecção reconhecer a lei no comentário da questão. Hoje ela reconhece: CTN, CF, LC 87, LC 214, LC 227, EC 132 e Lei 6.830.</div>
+      <div class="lupa-sub">Um artigo só aparece em “Meus erros” com o texto se a detecção reconhecer a lei no comentário da questão. Hoje ela reconhece: CTN, CF, ADCT, EC 132, LC 24, LC 87, LC 116, LC 123, LC 214, LC 227 e as Leis 6.830, 8.429, 9.784, 12.527 e 14.133.</div>
     </div>`;
 }
 async function renderLeiSeca(semRecoleta){

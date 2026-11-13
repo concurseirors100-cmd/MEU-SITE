@@ -7,7 +7,7 @@
 //
 // Uso:  node ferramentas/gerar-leis.js <pasta com os .txt> [data AAAA-MM-DD]
 // Nomes esperados dos arquivos: ctn.txt, cf.txt, lc87.txt, lc214.txt, lc227.txt,
-// ec132.txt, lei6830.txt (os que faltarem são pulados).
+// ec132.txt, lei6830.txt, lc116.txt, lei8429.txt, lei14133.txt (os que faltarem são pulados).
 const fs=require('fs'),path=require('path'),vm=require('vm');
 const raiz=path.join(__dirname,'..');
 const LEIS=[
@@ -17,7 +17,10 @@ const LEIS=[
   {arq:'lc214',k:'LC 214/2025',fonte:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp214.htm'},
   {arq:'lc227',k:'LC 227/2026',fonte:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp227.htm'},
   {arq:'ec132',k:'EC 132/2023',fonte:'https://www.planalto.gov.br/ccivil_03/constituicao/emendas/emc/emc132.htm'},
-  {arq:'lei6830',k:'Lei 6.830/1980',fonte:'https://www.planalto.gov.br/ccivil_03/leis/l6830.htm'}
+  {arq:'lei6830',k:'Lei 6.830/1980',fonte:'https://www.planalto.gov.br/ccivil_03/leis/l6830.htm'},
+  {arq:'lc116',k:'LC 116/2003',fonte:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp116.htm'},
+  {arq:'lei8429',k:'Lei 8.429/1992',fonte:'https://www.planalto.gov.br/ccivil_03/leis/l8429.htm'},
+  {arq:'lei14133',k:'Lei 14.133/2021',fonte:'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/L14133.htm'}
 ];
 // carrega só o separador de artigos do site, com um "document" de mentira
 const ctx={document:{createElement:()=>({}),head:{appendChild(){}},addEventListener(){}},console};
