@@ -130,10 +130,19 @@ function lsArtigosDe(q,max){
 const LS_MAX_ART_Q=4;      // artigos por questão que viram card
 // Para um assunto sem artigo nas questões erradas: os artigos mais citados por TODAS
 // as questões daquele assunto no banco (o recorte sai do próprio material).
+let lsPorAssunto=null;   // 'matéria§subtema' -> questões (refeito a cada coleta)
+function lsIndexarAssuntos(){
+  lsPorAssunto=new Map();
+  questions.forEach(q=>{const k=((q.materia||'—').trim()||'—')+'§'+((q.subtema||'—').trim()||'—');if(!lsPorAssunto.has(k))lsPorAssunto.set(k,[]);lsPorAssunto.get(k).push(q);});
+}
+// Assunto fraco (14/11, pedido do Anderson): acerto abaixo de LS_FRACO_PCT com pelo
+// menos LS_FRACO_MIN respostas no site. Ganha card próprio com os artigos mais
+// citados do assunto, mesmo que cada questão errada já tenha o seu card de artigo.
+const LS_FRACO_PCT=70, LS_FRACO_MIN=5;
 function lsArtigosDoAssunto(mat,sub){
   const cont=new Map();let n=0;
-  questions.forEach(q=>{
-    if(((q.materia||'—').trim()||'—')!==mat||((q.subtema||'—').trim()||'—')!==sub)return;
+  if(!lsPorAssunto)lsIndexarAssuntos();
+  (lsPorAssunto.get(mat+'§'+sub)||[]).forEach(q=>{
     n++;
     lsArtigosDe(q,LS_MAX_ART_Q).forEach(a=>{const o=cont.get(a.k)||{c:0,m:new Set()};o.c++;a.m.forEach(x=>o.m.add(x));cont.set(a.k,o);});
   });
@@ -366,6 +375,27 @@ async function lsColetar(){
       if(typeof ehLeech==='function'&&ehLeech(q))g.leech++;
     });
   });
+  // assuntos fracos: card por assunto, com as questões erradas dele
+  lsIndexarAssuntos();
+  lsPorAssunto.forEach((qs,chave)=>{
+    let ac=0,er=0;const ativas=qs.filter(q=>!q.suspensa);
+    ativas.forEach(q=>{ac+=q.acertos||0;er+=q.erros||0;});
+    const resp=ac+er;if(resp<LS_FRACO_MIN||!er)return;
+    const pct=Math.round(100*ac/resp);if(pct>=LS_FRACO_PCT)return;
+    const i=chave.indexOf('§'),mat=chave.slice(0,i),sub=chave.slice(i+1),k='ass:'+chave;
+    const novo=!G.has(k);
+    if(novo&&!lsArtigosDoAssunto(mat,sub).arts.length)return;   // sem artigo para mostrar: não cria card vazio
+    const g=get(k,'ass',mat,sub==='—'?'(sem subtema)':sub);
+    g.matNome=mat;g.subNome=sub;g.fraco={pct,resp};
+    const ja=new Set(g.qs.map(x=>x.q.id));
+    ativas.forEach(q=>{
+      const lg=porQ.get(q.id)||{dif:0,ult:0},e=q.erros||0;
+      if((!e&&!lg.dif)||ja.has(q.id))return;
+      g.qs.push({q,erros:e,dif:lg.dif,ult:lg.ult});
+      g.erros+=e;g.dif+=lg.dif;if(lg.ult>g.ult)g.ult=lg.ult;
+      if(typeof ehLeech==='function'&&ehLeech(q))g.leech++;
+    });
+  });
   (typeof fragmentos!=='undefined'?fragmentos:[]).forEach(f=>{
     if(!(f.erros>0))return;
     const k=(typeof varChaveDisp==='function')?varChaveDisp(f.dispositivo):null;
@@ -386,7 +416,7 @@ async function lsColetar(){
     g.erroNovo=!!(g.li&&g.ult&&g.ult>g.li);
     return g;
   });
-  lista.sort((a,b)=>(b.pend-a.pend)||((b.leech>0)-(a.leech>0))||(b.fragil-a.fragil)||(b.erros-a.erros)||(b.dif-a.dif)||(b.ult-a.ult)||a.k.localeCompare(b.k,'pt-BR'));
+  lista.sort((a,b)=>(b.pend-a.pend)||((b.leech>0)-(a.leech>0))||((b.fraco?1:0)-(a.fraco?1:0))||(b.fragil-a.fragil)||(b.erros-a.erros)||(b.dif-a.dif)||(b.ult-a.ult)||a.k.localeCompare(b.k,'pt-BR'));
   lsGrupos=lista;lsPorChave=new Map(lista.map(g=>[g.k,g]));
   return lista;
 }
@@ -496,6 +526,7 @@ function lsSelos(g){
   const s=[];
   if(g.leech)s.push('<span class="ls-b ls-b-leech">🔥 leech</span>');
   if(g.fragil)s.push('<span class="ls-b ls-b-fragil">⚠️ regra frágil</span>');
+  if(g.fraco)s.push(`<span class="ls-b ls-b-fragil" title="Acerto no assunto, pelos contadores das questões">assunto fraco · ${g.fraco.pct}% em ${g.fraco.resp}</span>`);
   if(g.ne)s.push('<span class="ls-b ls-b-ne">❓ não entendi</span>');
   if(g.erroNovo)s.push('<span class="ls-b ls-b-novo">erro depois da leitura</span>');
   else if(g.li)s.push(`<span class="ls-b ls-b-li">✓ lido ${lsFmtData(g.li)}</span>`);
@@ -545,7 +576,7 @@ function lsAtualizarContadores(){
   el.innerHTML=`<div><b>${arts.length}</b><span>artigos com erro ou Difícil</span></div>
     <div><b>${lsGrupos.filter(g=>g.pend).length}</b><span>ainda não lidos</span></div>
     <div><b>${lsGrupos.filter(g=>g.ne).length}</b><span>não entendi</span></div>
-    <div><b>${ass.length}</b><span>assuntos sem artigo nas questões erradas</span></div>`;
+    <div><b>${ass.filter(g=>g.fraco).length}</b><span>assuntos fracos (abaixo de ${LS_FRACO_PCT}%)</span></div>`;
 }
 function lsAba(a){LSV.aba=a;LSV.mais=false;renderLeiSeca();}
 function lsSet(k,v){LSV[k]=v;LSV.mais=false;renderLeiSeca(true);}
@@ -556,6 +587,7 @@ function lsFiltrar(){
     if(LSV.filtro==='ne'&&!g.ne)return false;
     if(LSV.filtro==='fragil'&&!g.fragil&&!g.leech)return false;
     if(LSV.filtro==='semart'&&g.tipo!=='ass')return false;
+    if(LSV.filtro==='fraco'&&!g.fraco)return false;
     if(LSV.filtro==='lidos'&&g.pend)return false;
     if(LSV.mat&&!g.mats.has(LSV.mat))return false;
     if(b){const alvo=(typeof normFrag==='function'?normFrag(g.k+' '+g.rot+' '+g.mat):(g.k+' '+g.rot+' '+g.mat).toLowerCase());if(!alvo.includes(b))return false;}
@@ -564,7 +596,7 @@ function lsFiltrar(){
 }
 function lsHtmlErrosView(){
   const mats=[...new Set(lsGrupos.flatMap(g=>[...g.mats]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  const chips=[['pend','Não lidos'],['todos','Todos'],['fragil','Frágeis e leeches'],['ne','Não entendi'],['semart','Sem artigo'],['lidos','Lidos']];
+  const chips=[['pend','Não lidos'],['todos','Todos'],['fragil','Frágeis e leeches'],['fraco','Assuntos fracos'],['semart','Por assunto'],['ne','Não entendi'],['lidos','Lidos']];
   const lista=lsFiltrar(),mostra=LSV.mais?lista:lista.slice(0,LS_LIMITE_LISTA);
   const semTexto=[...new Set(lsGrupos.filter(g=>g.tipo==='art'&&!lsTemTexto(g.lei)).map(g=>g.lei))];
   return `<div class="lupa-nums ls-cont" id="ls-cont"></div>
