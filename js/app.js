@@ -1137,8 +1137,18 @@ const SCHED_PADRAO={
   tetoDias:365,
   limiteDiario:60,                    // teto de revisões por dia (0 = sem limite)
   cotaNovas:0.40,                     // fatia do dia reservada a questões de banca ainda não respondidas
-  leechLimite:5                       // nº de erros que marca a questão como "leech"
+  leechLimite:3                       // nº de erros que marca a questão como "leech" (era 5 até 13/11)
 };
+// 13/11 (pedido do Anderson): leech com 3 erros em vez de 5 — três erros na mesma
+// questão já indicam falta de teoria, não de repetição. Quem tinha o padrão antigo
+// (5) gravado no navegador passa para 3 uma única vez; valor escolhido à mão
+// (diferente de 5) é respeitado. Não altera ef, intervalo, datas nem histórico.
+(function(){try{
+  if(localStorage.getItem('questia_leech3'))return;
+  const c=JSON.parse(localStorage.getItem('questia_sched')||'null');
+  if(c&&c.leechLimite===5){c.leechLimite=3;localStorage.setItem('questia_sched',JSON.stringify(c));}
+  localStorage.setItem('questia_leech3','1');
+}catch(e){}})();
 function schedCfg(fonte){
   const c=schedCfgBruto();
   const n=diasAteProva();
@@ -1309,7 +1319,7 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;',
 function semMarcadorImg(s){return String(s||'').replace(/\[\[IMG:[^\]]*\]\]/g,'[imagem]').replace(/\[\[IMG-URL:[^\]]*\]\]/gi,'[imagem]').replace(/\[\[IMAGEM N[ÃA]O IMPORTADA\]\]/gi,'[imagem]');}
 
 // NAV
-function nav(page){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('page-'+page).classList.add('active');['gerar','banco','estudar','resumos','revisao','stats','meta','backup','ranking','dashboard','lupa'].forEach((p,i)=>{if(p===page)document.querySelectorAll('.nav-item')[i].classList.add('active');});if(page==='lupa'&&typeof renderLupa==='function'){const ss=document.getElementById('lupa-sessao');if(ss)ss.style.display='none';const pp=document.getElementById('lupa-painel');if(pp)pp.style.display='block';renderLupa();}if(page==='banco')renderBanco();if(page==='estudar')initStudy();if(page==='resumos')renderResumos();if(page==='revisao'){loadCards();document.getElementById('rev-meta-input').value=cfgRev().meta;document.getElementById('rev-erros-input').value=cfgRev().minErros;renderRevisao();}if(page==='stats'){
+function nav(page){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));document.getElementById('page-'+page).classList.add('active');['gerar','banco','estudar','resumos','revisao','stats','meta','backup','ranking','dashboard','lupa','leiseca'].forEach((p,i)=>{if(p===page)document.querySelectorAll('.nav-item')[i].classList.add('active');});if(page==='lupa'&&typeof renderLupa==='function'){const ss=document.getElementById('lupa-sessao');if(ss)ss.style.display='none';const pp=document.getElementById('lupa-painel');if(pp)pp.style.display='block';renderLupa();}if(page==='leiseca'&&typeof renderLeiSeca==='function')renderLeiSeca();if(page==='banco')renderBanco();if(page==='estudar')initStudy();if(page==='resumos')renderResumos();if(page==='revisao'){loadCards();document.getElementById('rev-meta-input').value=cfgRev().meta;document.getElementById('rev-erros-input').value=cfgRev().minErros;renderRevisao();}if(page==='stats'){
     renderStats();renderSchedCard();
     // Inicializar datas se ainda não definidas
     const toEl=document.getElementById('hist-to');
@@ -1667,7 +1677,7 @@ const QUAL_ERRO_ESPERA=5, QUAL_1ACERTO_ESPACO=4, QUAL_ENTRADA_EXTRA=4, QUAL_IRMA
 const QUAL_IRMA_FRACAO=0.20, QUAL_IRMA_MAX=30;
 let histResp=null;   // recarregado a cada montagem de fila a partir do registro de respostas
 const chaveAssunto=q=>(q.materia||'—').trim()+'§'+(q.subtema||'—').trim();
-function ehLeech(q){return (q.erros||0)>=(schedCfg().leechLimite||5);}
+function ehLeech(q){return (q.erros||0)>=(schedCfg().leechLimite||3);}
 // ===== LTM e ZFM: ACERTOU, SAI DA FILA ATÉ A PROVA (21/10, decisão do Anderson) =====
 // Com 11 dias até a prova e o banco de LTM/ZFM grande demais para rever tudo, a
 // questão dessas matérias cuja ÚLTIMA resposta foi Bom, Fácil ou Dominada sai da fila
@@ -2552,7 +2562,7 @@ function rate(quality){
   save();
   // Aviso de leech exatamente no erro que cruza o limite — uma vez só, não a cada erro
   if(quality===0&&questions[ri].erros===schedCfg().leechLimite){
-    setTimeout(()=>notify(`🔥 Esta questão já tem ${questions[ri].erros} erros. Repetição não está resolvendo — provavelmente falta teoria. Veja em Banco → 🔥 Leeches.`,'err'),1000);
+    setTimeout(()=>notify(`🔥 Esta questão já tem ${questions[ri].erros} erros. Repetição não está resolvendo — provavelmente falta teoria. O artigo dela está em 📖 Lei seca (ou veja em Banco → 🔥 Leeches).`,'err'),1000);
   }
   setTimeout(()=>{ratingLock=false;dueIdx++;updateSessBar();showCard();},900);
 }
@@ -3647,7 +3657,7 @@ function onSchedInput(){
   c.tetoDias=Math.max(7,Math.min(3650,+document.getElementById('sched-teto').value||365));
   c.limiteDiario=Math.max(0,Math.min(999,+document.getElementById('sched-limite').value||0));
   c.cotaNovas=Math.max(0,Math.min(1,(+document.getElementById('sched-cota').value||0)/100));
-  c.leechLimite=Math.max(2,Math.min(30,+document.getElementById('sched-leech').value||5));
+  c.leechLimite=Math.max(2,Math.min(30,+document.getElementById('sched-leech').value||3));
   salvarSchedCfg(c);
   document.getElementById('im-val').textContent=Math.round(c.im*100)+'%';
   document.getElementById('sched-presets').innerHTML=SCHED_PRESETS.map(p=>
@@ -3787,7 +3797,9 @@ async function coletarExtras(){
   try{if(idbOk)rankingHist=await idbLer(ST_META,'ranking_hist');}catch(e){}
   let fragmentosBk=null;
   try{if(idbOk)fragmentosBk=(await idbLer(ST_META,'fragmentos'))||null;}catch(e){}
-  return{hist:histCache||{},respostas,rankingHist:rankingHist||null,fragmentos:fragmentosBk,localStorage:ls};
+  let leiSecaBk=null;
+  try{if(idbOk)leiSecaBk=(await idbLer(ST_META,'leiseca_textos'))||null;}catch(e){}
+  return{hist:histCache||{},respostas,rankingHist:rankingHist||null,fragmentos:fragmentosBk,leiSeca:leiSecaBk,localStorage:ls};
 }
 async function exportarBanco(){
   if(questions.length===0){notify('Banco vazio — nada para exportar','err');return;}
@@ -3899,6 +3911,12 @@ async function aplicarExtras(ex,modo){
     const ids=new Set(atual.map(f=>f.id));const final=atual.concat(ex.fragmentos.filter(f=>f&&f.id&&!ids.has(f.id)));
     await idbGravar(ST_META,final,'fragmentos');
     try{fragCarregado=false;}catch(e){}
+  }
+  // 3c) textos das leis (aba Lei seca): por lei; a deste navegador vence, salvo em "substituir"
+  if(idbOk&&ex.leiSeca&&typeof ex.leiSeca==='object'&&!Array.isArray(ex.leiSeca)){
+    let atual={};try{atual=subst?{}:((await idbLer(ST_META,'leiseca_textos'))||{});}catch(e){}
+    await idbGravar(ST_META,Object.assign({},ex.leiSeca,atual),'leiseca_textos');
+    try{lsTextosOk=false;}catch(e){}
   }
   // 4) resumos, flashcards e configurações
   if(ex.localStorage&&typeof ex.localStorage==='object'){

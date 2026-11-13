@@ -128,6 +128,12 @@ async function renderDashboard(){
   const temLog=L.length>0;
   if(DASH.origem==='banca')L=L.filter(x=>x.fonte==='tec');
   else if(DASH.origem==='ia')L=L.filter(x=>x.fonte!=='tec');
+  // Inéditas (13/11): 1ª resposta dada no site a uma questão nunca respondida aqui.
+  // Medida pelo clique na alternativa (quando registrado), que é o dado honesto de
+  // acerto; sem clique, vale a nota. Independe dos filtros "Curva mede" e "Respostas
+  // na curva"; respeita o filtro de origem. Respostas anteriores ao registro datado
+  // são descontadas pelos contadores da questão (mesma regra das regras frágeis).
+  const Lorig=L;
   if(DASH.escopo==='primeira'){const vistos=new Set();L=L.filter(x=>{if(vistos.has(x.qid))return false;vistos.add(x.qid);return true;});}
   const okDe=x=>{
     if(DASH.crit==='clique')return(x.acertouClique===null||x.acertouClique===undefined)?null:!!x.acertouClique;
@@ -158,6 +164,29 @@ async function renderDashboard(){
     a.log.push(item);g.log.push(item);
   });
 
+  const novoI=()=>({n:0,ok:0,n30:0,ok30:0});
+  const somaI=(o,ok,rec)=>{o.n++;o.ok+=ok;if(rec){o.n30++;o.ok30+=ok;}};
+  const inedGeral=novoI(),desde30=Date.now()-30*86400000;
+  {
+    const nLog=new Map();Lorig.forEach(x=>nLog.set(x.qid,(nLog.get(x.qid)||0)+1));
+    const visto=new Set();
+    Lorig.forEach(x=>{
+      if(visto.has(x.qid))return;visto.add(x.qid);
+      const q=porId.get(x.qid);
+      const antes=q?Math.max(0,(q.acertos||0)+(q.erros||0)-nLog.get(x.qid)):0;
+      if(antes>0)return;                       // já tinha resposta antes do registro: não é inédita
+      let ok=(x.acertouClique===null||x.acertouClique===undefined)?null:(x.acertouClique?1:0);
+      if(ok===null){if(x.nota===null||x.nota===undefined)return;ok=x.nota!==0?1:0;}
+      const materia=((q?q.materia:x.materia)||'—').trim()||'—',subtema=((q?q.subtema:x.subtema)||'—').trim()||'—';
+      const g=getG(disciplinaDaMateria(materia)),a=getA(g,materia,subtema);
+      const rec=x.ts>=desde30;
+      if(!a.ined)a.ined=novoI();if(!g.ined)g.ined=novoI();
+      somaI(a.ined,ok,rec);somaI(g.ined,ok,rec);somaI(inedGeral,ok,rec);
+    });
+  }
+  const pI=(o,rec)=>!o?null:(rec?(o.n30?o.ok30/o.n30*100:null):(o.n?o.ok/o.n*100:null));
+  const nI=(o,rec)=>!o?0:(rec?o.n30:o.n);
+
   const lista=[...grupos.values()];
   lista.forEach(g=>{
     g.assArr=[...g.ass.values()].filter(a=>a.tot>0||a.resp>0||a.log.length>0);
@@ -184,7 +213,9 @@ async function renderDashboard(){
   html+=`<div style="font-size:12px;color:var(--muted);margin-bottom:12px">Mostrando: <strong style="color:var(--ink2)">${rotOrigem}</strong>${DASH.escopo==='primeira'?' · curva só com a 1ª resposta de cada questão':''}</div>`;
   html+=`<div class="dash-resumo">
     <div><b>${tRespTot.toLocaleString('pt-BR')}</b><span>respostas registradas</span></div>
-    <div><b style="color:${dashCorAcerto(tRespTot?tAcTot/tRespTot*100:null)}">${dashFmt(tRespTot?tAcTot/tRespTot*100:null)}</b><span>acerto geral</span></div>
+    <div><b style="color:${dashCorAcerto(tRespTot?tAcTot/tRespTot*100:null)}">${dashFmt(tRespTot?tAcTot/tRespTot*100:null)}</b><span>acerto geral (com revisões)</span></div>
+    <div title="1ª resposta no site a uma questão nunca respondida aqui, pelo clique na alternativa"><b style="color:${dashCorAcerto(pI(inedGeral))}">${dashFmt(pI(inedGeral))}</b><span>acerto em inéditas (${nI(inedGeral).toLocaleString('pt-BR')} questões)</span></div>
+    <div><b style="color:${dashCorAcerto(pI(inedGeral,true))}">${dashFmt(pI(inedGeral,true))}</b><span>inéditas, últimos 30 dias (${nI(inedGeral,true).toLocaleString('pt-BR')})</span></div>
     <div><b>${tBanca?Math.round(100*tVistas/tBanca)+'%':'—'}</b><span>da banca já vista (${tVistas.toLocaleString('pt-BR')} de ${tBanca.toLocaleString('pt-BR')})</span></div>
     <div><b style="color:var(--yellow)">${tBanca?Math.round(100*(tBanca-tVistas)/tBanca)+'%':'—'}</b><span>da banca falta ver</span></div>
     <div><b><span style="color:var(--green)">${nMel}</span> <span style="color:var(--muted);font-size:20px">/</span> <span style="color:var(--accent)">${nQue}</span> <span style="color:var(--muted);font-size:20px">/</span> ${nEst}</b><span>assuntos: melhora / queda / estável (${nPou} sem dados)</span></div>
@@ -220,8 +251,9 @@ async function renderDashboard(){
       <td>${a.faltam===null?'—':Math.round(a.faltam)+'%'+'<span class="dash-mini"><i style="width:'+a.faltam+'%"></i></span>'}</td>
       <td>${a.resp}</td>
       <td style="color:${dashCorAcerto(a.pct)};font-weight:700">${dashFmt(a.pct)}</td>
+      <td style="color:${dashCorAcerto(pI(a.ined))};font-weight:700">${dashFmt(pI(a.ined))}${nI(a.ined)?' <small style="color:var(--muted);font-weight:400">('+nI(a.ined)+')</small>':''}</td>
       <td style="white-space:nowrap">${dashSpark(a.t.pts,a.t.tipo,64,20)}${dashBadge(a.t)}${a.t.b&&a.t.b.length>1?`<button class="dash-btn-curva" onclick="dashToggleCurva(${i})" title="Abrir a curva completa deste assunto">📈</button>`:''}</td>
-    </tr><tr id="dashx-${i}" style="display:none"><td colspan="7" style="text-align:left;padding:10px 4px 14px"><div id="dashxc-${i}"></div></td></tr>`;
+    </tr><tr id="dashx-${i}" style="display:none"><td colspan="8" style="text-align:left;padding:10px 4px 14px"><div id="dashxc-${i}"></div></td></tr>`;
   };
 
   html+='<div class="dash-grid">';
@@ -232,18 +264,20 @@ async function renderDashboard(){
         <div><h3>${esc(g.nome)}</h3><small>${g.prova?'Prova '+g.prova+' · '+Math.round(g.pts)+' pts':'fora do edital'} · ${g.assArr.length} assunto${g.assArr.length===1?'':'s'}</small></div>
         <div style="white-space:nowrap">${dashBadge(g.t)}</div>
       </div>
-      <div class="dash-tiles">
+      <div class="dash-tiles" style="grid-template-columns:repeat(3,1fr)">
         <div class="dash-tile"><b>${g.resp.toLocaleString('pt-BR')}</b><span>resolvidas</span></div>
-        <div class="dash-tile"><b style="color:${dashCorAcerto(g.pct)}">${dashFmt(g.pct)}</b><span>de acerto</span></div>
+        <div class="dash-tile"><b style="color:${dashCorAcerto(g.pct)}">${dashFmt(g.pct)}</b><span>acerto geral</span></div>
+        <div class="dash-tile" title="1ª resposta no site a uma questão nunca respondida aqui, pelo clique na alternativa"><b style="color:${dashCorAcerto(pI(g.ined))}">${dashFmt(pI(g.ined))}</b><span>em inéditas (${nI(g.ined)})${nI(g.ined,true)?' · 30 dias: '+dashFmt(pI(g.ined,true))+' ('+nI(g.ined,true)+')':''}</span></div>
         <div class="dash-tile"><b>${g.tot?Math.round(seen)+'%':'—'}</b><span>da banca vista</span></div>
         <div class="dash-tile"><b style="color:${g.tot?'var(--yellow)':'var(--muted)'}">${g.tot?Math.round(100-seen)+'%':'—'}</b><span>falta ver</span></div>
       </div>
+      ${(g.pct!==null&&pI(g.ined)!==null&&nI(g.ined)>=10&&g.pct-pI(g.ined)>=15)?`<div class="dash-cap" style="color:var(--red-text);margin:-4px 0 10px">Acerto geral ${Math.round(g.pct-pI(g.ined))} pontos acima das inéditas: parte do acerto aqui é de questão já conhecida.</div>`:''}
       <div class="dash-barra"><div style="width:${seen}%"></div></div>
       <div class="dash-barra-leg"><span>${g.tot?g.vistas.toLocaleString('pt-BR')+' vistas de '+g.tot.toLocaleString('pt-BR')+' questões de banca importadas':(g.vazia?'nenhuma questão importada desta disciplina':'sem questões de banca ativas neste filtro')}</span><span>${g.tot?(g.tot-g.vistas).toLocaleString('pt-BR')+' faltam':''}</span></div>
       <div class="dash-grafico"><div class="dash-gtitle">Evolução do acerto</div>${dashGrafico(g.t,180)}<div class="dash-cap">${dashLegenda(g.t)}</div></div>`;
     if(g.assArr.length){
       html+=`<details><summary>Ver ${g.assArr.length} assunto${g.assArr.length===1?'':'s'}</summary><div class="dash-scroll"><table class="dash-tab">
-        <tr><th>Assunto</th><th>Banca</th><th>Vistas</th><th>Falta ver</th><th>Resolvidas</th><th>Acerto</th><th>Curva</th></tr>
+        <tr><th>Assunto</th><th>Banca</th><th>Vistas</th><th>Falta ver</th><th>Resolvidas</th><th>Acerto</th><th title="1ª resposta a questão nunca respondida no site">Inéditas</th><th>Curva</th></tr>
         ${ordena(g.assArr).map(linhaAss).join('')}
       </table></div></details>`;
     }
@@ -253,6 +287,7 @@ async function renderDashboard(){
 
   html+=`<div class="dash-nota">
     <strong>Como ler.</strong> <em>Resolvidas</em> e <em>acerto</em> vêm dos contadores de cada questão (só "Errei" conta como erro, como nas Estatísticas).
+    <em>Inéditas</em> = a 1ª resposta que você deu no site a cada questão, medida pelo clique na alternativa: é o número mais próximo do desempenho em prova. Questões do TEC podem já ter sido vistas lá, então mesmo esse número pode estar um pouco inflado; as variantes geradas são a medida mais limpa.<br>
     <em>Falta ver</em> = questões de banca importadas que você ainda não respondeu, sobre o total de banca importado — mede o seu banco, não o universo do TecConcursos.<br>
     <strong>Curva.</strong> As respostas do assunto são ordenadas no tempo e comparadas: 1ª metade contra 2ª metade. O selo <em>▲ 50% → 62%</em> diz o acerto de antes e o de agora.
     A diferença entre os dois é medida em <em>pontos percentuais</em> (50% → 62% = +12 pontos percentuais, e não "+12%"). Só vale como melhora ou queda se for de pelo menos 5 pontos e provável (não acaso); senão aparece "estável".<br>

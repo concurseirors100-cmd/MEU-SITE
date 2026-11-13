@@ -45,6 +45,7 @@
     <div class="nav-item" onclick="nav('ranking')"><span>🏆</span> Ranking</div>
     <div class="nav-item" onclick="nav('dashboard')"><span>🧭</span> Dashboard</div>
     <div class="nav-item" onclick="nav('lupa')"><span>🔬</span> Lupa</div>
+    <div class="nav-item" onclick="nav('leiseca')"><span>📖</span> Lei seca</div>
   </nav>
   <div class="sidebar-bottom">
     <div class="sidebar-stat"><span class="sidebar-stat-num" id="sb-total">0</span>questões salvas</div>
@@ -408,7 +409,7 @@
           </div>
           <div>
             <label class="config-label">Erros para marcar leech</label>
-            <input type="number" class="config-input" id="sched-leech" min="2" max="30" step="1" value="5" oninput="onSchedInput()" style="width:130px">
+            <input type="number" class="config-input" id="sched-leech" min="2" max="30" step="1" value="3" oninput="onSchedInput()" style="width:130px">
           </div>
           <div>
             <label class="config-label">Data da prova</label>
@@ -519,6 +520,12 @@
       </div>
     </div>
     <div class="page-body"><div id="dash-corpo"></div></div>
+  </div>
+
+  <!-- LEI SECA -->
+  <div class="page" id="page-leiseca">
+    <div class="page-head"><div><div class="page-title">📖 <em>Lei seca</em></div><div class="page-sub">Os artigos em que você errou ou marcou Difícil, com o texto da lei na hora. Sem relógio e sem meta: leia quando quiser</div></div></div>
+    <div class="page-body"><div id="ls-corpo"></div></div>
   </div>
 
   <!-- LUPA -->
@@ -759,6 +766,7 @@
 <script src="js/app.js"></script>
 <script src="js/lupa.js"></script>
 <script src="js/variante.js"></script>
+<script src="js/leiseca.js"></script>
 <script src="js/perfil.js"></script>
 
 
