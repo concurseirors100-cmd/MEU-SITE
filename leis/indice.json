@@ -1,0 +1,50 @@
+{
+ "CTN": {
+  "arquivo": "ctn.json",
+  "n": 231,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/leis/l5172compilado.htm"
+ },
+ "CF/88": {
+  "arquivo": "cf.json",
+  "n": 276,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/constituicao/ConstituicaoCompilado.htm"
+ },
+ "ADCT": {
+  "arquivo": "adct.json",
+  "n": 148,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/constituicao/ConstituicaoCompilado.htm"
+ },
+ "LC 87/1996": {
+  "arquivo": "lc87.json",
+  "n": 40,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp87.htm"
+ },
+ "LC 214/2025": {
+  "arquivo": "lc214.json",
+  "n": 579,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp214.htm"
+ },
+ "LC 227/2026": {
+  "arquivo": "lc227.json",
+  "n": 182,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp227.htm"
+ },
+ "EC 132/2023": {
+  "arquivo": "ec132.json",
+  "n": 23,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/constituicao/emendas/emc/emc132.htm"
+ },
+ "Lei 6.830/1980": {
+  "arquivo": "lei6830.json",
+  "n": 42,
+  "em": "2026-11-13",
+  "fonte": "https://www.planalto.gov.br/ccivil_03/leis/l6830.htm"
+ }
+}
