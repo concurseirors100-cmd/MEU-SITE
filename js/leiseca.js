@@ -7,31 +7,36 @@
 //  1) Meus erros: questões com erro ou "Difícil" (e itens da Lupa errados) agrupados
 //     por artigo ("CTN, art. 138"), usando a mesma detecção da revisão com variante
 //     (varDispDe). Sem artigo identificado, agrupa por assunto e mostra o comentário.
-//  2) Lei inteira: navegar pelo texto carregado, com os artigos de erro marcados.
-//  3) Textos: a lei é colada/importada UMA vez (texto copiado do Planalto) e o site
-//     separa por artigo. Nada é escrito de memória: sem texto carregado, o card
-//     mostra só o material das próprias questões e o link da lei.
+//  2) Textos: as leis mais cobradas já vêm com o site (pasta leis/, geradas do texto
+//     do Planalto por ferramentas/gerar-leis.js) e são baixadas só quando um card
+//     daquela lei é aberto. Outras leis (as locais, quando sair o edital) podem ser
+//     coladas na aba "Textos das leis"; a colada vence a que vem com o site.
+//     Nada é escrito de memória: sem texto, o card mostra só o material das
+//     próprias questões e o link da lei.
+//  (A visão "Lei inteira" foi retirada a pedido: o foco são os artigos errados.)
 //
 // Não mexe no SM-2, na fila, nos contadores nem no registro de respostas. Guarda só:
 //  - marcas de leitura (localStorage 'questia_leiseca_marcas' → entram no backup);
-//  - textos das leis (IndexedDB, meta 'leiseca_textos' → entram no backup).
+//  - textos colados à mão (IndexedDB, meta 'leiseca_textos' → entram no backup).
 
 const LS_MARCAS_KEY='questia_leiseca_marcas';
 const LS_LIMITE_LISTA=60;
 // Chaves iguais às que varLeiDoContexto devolve, para o texto casar com a detecção.
 const LS_LEIS=[
   {k:'CTN',nome:'CTN (Lei 5.172/1966)',url:'https://www.planalto.gov.br/ccivil_03/leis/l5172compilado.htm'},
-  {k:'CF/88',nome:'Constituição Federal',url:'https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm'},
+  {k:'CF/88',nome:'Constituição Federal',url:'https://www.planalto.gov.br/ccivil_03/constituicao/ConstituicaoCompilado.htm'},
   {k:'LC 87/1996',nome:'LC 87/1996 (Lei Kandir)',url:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp87.htm'},
   {k:'LC 214/2025',nome:'LC 214/2025 (IBS/CBS/IS)',url:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp214.htm'},
-  {k:'LC 227/2026',nome:'LC 227/2026',url:''},
+  {k:'LC 227/2026',nome:'LC 227/2026 (Comitê Gestor, ITCMD)',url:'https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp227.htm'},
   {k:'EC 132/2023',nome:'EC 132/2023',url:'https://www.planalto.gov.br/ccivil_03/constituicao/emendas/emc/emc132.htm'},
   {k:'Lei 6.830/1980',nome:'Lei 6.830/1980 (execução fiscal)',url:'https://www.planalto.gov.br/ccivil_03/leis/l6830.htm'}
 ];
 const lsLeiInfo=k=>LS_LEIS.find(l=>l.k===k)||{k,nome:k,url:''};
 
 let lsTextos={},lsTextosOk=false;
-let LSV={aba:'erros',filtro:'pend',mat:'',busca:'',lei:'',buscaLei:'',mais:false};
+let LSV={aba:'erros',filtro:'pend',mat:'',busca:'',mais:false};
+// Leis que vêm com o site: leis/indice.json lista {chave:{arquivo,n,em,fonte}}.
+let lsIndice=null,lsEmbutidas={},lsBaixando={};
 let lsGrupos=[],lsPorChave=new Map();
 
 // ---------- armazenamento ----------
@@ -51,38 +56,110 @@ async function lsSalvarTextos(){
     return true;
   }catch(e){notify('❌ Falha ao salvar o texto da lei: '+(e&&e.message||e),'err');return false;}
 }
+async function lsCarregarIndice(){
+  if(lsIndice)return lsIndice;
+  try{const r=await fetch('leis/indice.json');lsIndice=r.ok?await r.json():{};}catch(e){lsIndice={};}
+  if(!lsIndice||typeof lsIndice!=='object')lsIndice={};
+  return lsIndice;
+}
+function lsTemTexto(k){return !!(lsTextos[k]||(lsIndice&&lsIndice[k]));}
+// Devolve o texto da lei (colado à mão ou o que vem com o site), baixando se preciso.
+async function lsGarantirLei(k){
+  if(lsTextos[k])return lsTextos[k];
+  if(lsEmbutidas[k])return lsEmbutidas[k];
+  const i=lsIndice&&lsIndice[k];if(!i)return null;
+  if(!lsBaixando[k])lsBaixando[k]=fetch('leis/'+i.arquivo).then(r=>r.ok?r.json():null).then(d=>{if(d&&d.arts){lsEmbutidas[k]=d;}return lsEmbutidas[k]||null;}).catch(()=>null).finally(()=>{delete lsBaixando[k];});
+  return lsBaixando[k];
+}
+function lsLeiCarregada(k){return lsTextos[k]||lsEmbutidas[k]||null;}
+// Leis de que um artigo pode precisar. A EC 132 quase sempre é citada pelos artigos
+// que ela pôs na Constituição (156-A, 149-B...) ou no ADCT; e "CF, art. 125" numa
+// questão de reforma costuma ser o art. 125 do ADCT, que a detecção não distingue.
+function lsLeisDoGrupo(g){
+  if(g.lei==='EC 132/2023')return['EC 132/2023','CF/88','ADCT'];
+  if(g.lei==='CF/88')return['CF/88','ADCT'];
+  return[g.lei];
+}
 function lsMarcas(){try{const v=JSON.parse(localStorage.getItem(LS_MARCAS_KEY)||'{}');return v&&typeof v==='object'?v:{};}catch(e){return{};}}
 function lsSalvarMarcas(m){try{localStorage.setItem(LS_MARCAS_KEY,JSON.stringify(m));}catch(e){notify('❌ Não consegui salvar a marcação','err');}}
 
 // ---------- separar a lei em artigos ----------
-// Entrada: texto corrido copiado da página da lei. Saída: {arts:{'138':'Art. 138. ...'},ordem:[...]}.
-// Regras: um artigo começa em linha iniciada por "Art."; termina no próximo artigo ou
-// num título de divisão (LIVRO/TÍTULO/CAPÍTULO/SEÇÃO). Número repetido (artigo de
-// outra lei citado entre aspas, ADCT) fica com a PRIMEIRA ocorrência.
-const LS_RX_ART=/^Art\.?\s*(\d{1,2}(?:\.\d{3})|\d{1,4})\s*(?:º|°|o(?=[\s.\-–]))?\s*(?:[-–]\s*([A-Z])(?![A-Za-zÀ-ú]))?/;
+// Entrada: texto corrido da página da lei. Saída: {arts:{'138':'Art. 138. ...'},ordem:[...]}.
+// Um artigo começa em linha iniciada por "Art." e termina no próximo artigo, num
+// título de divisão (LIVRO/TÍTULO/CAPÍTULO/SEÇÃO) ou no fecho da lei. Cuidados:
+//  - artigo de OUTRA lei citado entre aspas (“Art. 12. ...” até o ”) fica dentro do
+//    artigo que o cita, mesmo quando as linhas seguintes da citação não trazem aspas;
+//  - os artigos da própria lei só crescem: o que quebra a ordem é citação sem aspas;
+//  - trecho riscado (redação antiga) precisa ser tirado ANTES: no Planalto ele vem
+//    em <strike> ou em span com text-decoration:line-through, e some no texto colado;
+//  - na Constituição, o ADCT sai separado (adct), para o art. 125 do ADCT não
+//    tomar o lugar do art. 125 do corpo.
+const LS_RX_ART=/^Art\.?\s*(\d{1,2}\.\d{3}|\d{1,4})\s*(?:º|°|o(?=[\s.\-–]))?(?:-([A-Z])(?![A-Za-zÀ-ú]))?/;
 const LS_RX_DIV=/^(LIVRO|T[ÍI]TULO|CAP[ÍI]TULO|SE[ÇC][ÃA]O|SUBSE[ÇC][ÃA]O|PARTE)\b/;
+const LS_RX_FIM=/^(Bras[íi]lia,\s|Este texto n[ãa]o substitui|ANEXO\b|Senado Federal, em|Rio de Janeiro,\s)/;
 const LS_RX_NOTA=/\s*\((?:Reda[cç][aã]o dada|Inclu[ií]d[oa]|Acrescid[oa]|Vide|Regulamento|Vig[eê]ncia|Produ[cç][aã]o de efeitos?|Renumerad[oa]|Promulga[cç][aã]o)[^()]*\)/gi;
+// fecho de citação: aspas no fim da linha, logo depois de pontuação (." ;" )" e o
+// (NR) opcional). Aspas depois de letra (alínea "b") não fecham.
+const LS_RX_FECHA=/[.;:)\]]\s*[”"]\s*(?:\(NR\))?\s*[.;]?\s*$/;
+const LS_RX_ADCT=/^ATO DAS DISPOSI[ÇC][ÕO]ES CONSTITUCIONAIS TRANSIT[ÓO]RIAS\s*$/;
 function lsNumArt(m){return m[1].replace(/\./g,'').replace(/^0+(?=\d)/,'')+(m[2]?'-'+m[2]:'');}
-function lsParseLei(txt){
-  const linhas=String(txt||'').replace(/\r/g,'').replace(/ /g,' ').split('\n').map(l=>l.replace(/[ \t]+/g,' ').trim());
-  const arts={},ordem=[];let cur=null,buf=[],repetidos=0,parou=false;
+// Maior sequência não decrescente: dos candidatos a artigo, quais são da própria lei.
+function lsSeqPropria(v){
+  const n=v.length,len=new Array(n).fill(1),ant=new Array(n).fill(-1);let fim=-1;
+  for(let i=0;i<n;i++){
+    for(let j=0;j<i;j++)if(v[j]<=v[i]&&len[j]+1>len[i]){len[i]=len[j]+1;ant[i]=j;}
+    if(fim<0||len[i]>=len[fim])fim=i;
+  }
+  const fica=new Set();for(let i=fim;i>=0;i=ant[i])fica.add(i);
+  return fica;
+}
+function lsFechaAspas(l){
+  // tira do fim da linha as notas entre parênteses ("(NR)", "(Vide Lei...)") e marcas soltas
+  let t=l,ant;
+  do{ant=t;t=t.replace(/\s*\([^()]*\)\s*$/,'').replace(/\s*(?:Produ[cç][aã]o de efeitos?|Vig[eê]ncia)\s*$/i,'');}while(t!==ant);
+  return LS_RX_FECHA.test(t);
+}
+function lsParseBloco(linhas){
+  // 1) marca cada linha: candidata a artigo, divisão, fecho ou texto (citação conta como texto)
+  const tok=[];let aspas=false;
+  for(const l of linhas){
+    if(!l)continue;
+    if(aspas){tok.push({l,t:'txt'});if(lsFechaAspas(l)||/^\(NR\)/.test(l))aspas=false;continue;}
+    if(/^[“"]/.test(l)){tok.push({l,t:'txt'});if(!lsFechaAspas(l.slice(1)))aspas=true;continue;}
+    const m=l.match(LS_RX_ART);
+    if(m){tok.push({l,t:'art',base:parseInt(m[1].replace(/\./g,''),10),num:lsNumArt(m)});continue;}
+    if(LS_RX_FIM.test(l)){tok.push({l,t:'fim'});continue;}
+    if(LS_RX_DIV.test(l)&&l===l.toUpperCase()){tok.push({l,t:'div'});continue;}
+    tok.push({l,t:'txt'});
+  }
+  // 2) os artigos da própria lei crescem; o que quebra a ordem é citação sem aspas
+  const cand=tok.filter(x=>x.t==='art'),fica=lsSeqPropria(cand.map(x=>x.base));
+  let citados=0;cand.forEach((x,i)=>{if(!fica.has(i)){x.t='txt';citados++;}});
+  // 3) monta os artigos. Número repetido (redação antiga sem risco no texto colado):
+  //    vale a ÚLTIMA ocorrência, que é a redação mais nova.
+  const arts={},ordem=[];let cur=null,buf=[],repetidos=0;
   const fechar=()=>{
     if(cur!==null){
-      const t=buf.join('\n').replace(LS_RX_NOTA,'').replace(/[ \t]+\n/g,'\n').replace(/ {2,}/g,' ').trim();
-      if(arts[cur]===undefined){arts[cur]=t;ordem.push(cur);}else repetidos++;
+      const t=buf.join('\n').replace(LS_RX_NOTA,'').replace(/([:.;])\s*(?:Produção de efeitos?|Vigência)$/gm,'$1').replace(/[ \t]+\n/g,'\n').replace(/ {2,}/g,' ').trim();
+      if(arts[cur]===undefined)ordem.push(cur);else repetidos++;
+      arts[cur]=t;
     }
     cur=null;buf=[];
   };
-  for(const l of linhas){
-    if(!l)continue;
-    if(/^ATO DAS DISPOSI[ÇC][ÕO]ES CONSTITUCIONAIS TRANSIT[ÓO]RIAS/.test(l)){fechar();parou=true;break;}
-    const m=l.match(LS_RX_ART);
-    if(m){fechar();cur=lsNumArt(m);buf=[l];continue;}
-    if(LS_RX_DIV.test(l)&&l===l.toUpperCase()){fechar();continue;}
-    if(cur!==null)buf.push(l);
+  for(const x of tok){
+    if(x.t==='art'){fechar();cur=x.num;buf=[x.l];}
+    else if(x.t==='fim'||x.t==='div')fechar();
+    else if(cur!==null)buf.push(x.l);
   }
   fechar();
-  return{arts,ordem,repetidos,parouNoADCT:parou};
+  return{arts,ordem,repetidos,citados};
+}
+function lsParseLei(txt){
+  const linhas=String(txt||'').replace(/\r/g,'').replace(/ /g,' ').split('\n').map(l=>l.replace(/[ \t]+/g,' ').trim());
+  const i=linhas.findIndex(l=>LS_RX_ADCT.test(l));
+  const r=lsParseBloco(i>=0?linhas.slice(0,i):linhas);
+  r.adct=i>=0?lsParseBloco(linhas.slice(i+1)):null;
+  return r;
 }
 function lsDetectarLei(txt){
   const ini=String(txt||'').slice(0,1500);
@@ -107,12 +184,15 @@ async function lsImportarTexto(){
   const det=lsDetectarLei(txt);
   const lin=[`• Lei: ${k}`,`• ${r.ordem.length} artigos (do art. ${r.ordem[0]} ao art. ${r.ordem[r.ordem.length-1]})`];
   if(det&&det!==k)lin.push(`• ATENÇÃO: o cabeçalho do texto parece ser de "${det}", não de "${k}"`);
-  if(r.repetidos)lin.push(`• ${r.repetidos} artigo(s) com número repetido ignorado(s) — ficou a primeira ocorrência`);
-  if(r.parouNoADCT)lin.push('• Parei no ADCT (os artigos transitórios não entram)');
-  if(lsTextos[k])lin.push(`• Substitui o texto já carregado (${lsTextos[k].ordem.length} artigos, de ${lsTextos[k].em})`);
+  if(r.repetidos)lin.push(`• ${r.repetidos} artigo(s) com número repetido ignorado(s) — ficou a última ocorrência (redação mais nova)`);
+  if(r.citados)lin.push(`• ${r.citados} artigo(s) de outras leis citados no texto ficaram dentro do artigo que os cita`);
+  if(r.adct&&r.adct.ordem.length)lin.push(`• ADCT separado: ${r.adct.ordem.length} artigos, gravados como "ADCT"`);
+  if(lsTextos[k])lin.push(`• Substitui o texto que você colou antes (${lsTextos[k].ordem.length} artigos, de ${lsTextos[k].em})`);
+  else if(lsIndice&&lsIndice[k])lin.push(`• Passa a valer no lugar do texto que vem com o site (${lsIndice[k].n} artigos)`);
   if(!confirm('Gravar o texto da lei?\n\n'+lin.join('\n')+'\n\nConfira os números antes de confirmar.'))return;
   await lsCarregarTextos();
   lsTextos[k]={em:today(),arts:r.arts,ordem:r.ordem};
+  if(r.adct&&r.adct.ordem.length)lsTextos['ADCT']={em:today(),arts:r.adct.arts,ordem:r.adct.ordem};
   if(await lsSalvarTextos()){notify(`📖 ${k}: ${r.ordem.length} artigos gravados`,'ok');if(ta)ta.value='';renderLeiSeca();}
 }
 function lsImportarArquivo(event){
@@ -132,7 +212,7 @@ function lsTrocaLeiImp(){
 }
 async function lsApagarTexto(k){
   if(!lsTextos[k])return;
-  if(!confirm(`Apagar o texto de "${k}" (${lsTextos[k].ordem.length} artigos)?\n\nSó o texto da lei sai. Marcações de leitura, questões e histórico não mudam.`))return;
+  if(!confirm(`Apagar o texto de "${k}" que você colou (${lsTextos[k].ordem.length} artigos)?\n\n${lsIndice&&lsIndice[k]?'Volta a valer o texto que vem com o site. ':''}Só o texto da lei sai. Marcações de leitura, questões e histórico não mudam.`))return;
   delete lsTextos[k];
   if(await lsSalvarTextos())renderLeiSeca();
 }
@@ -199,7 +279,7 @@ async function lsColetar(){
 
 // ---------- desenho ----------
 function lsFmtData(ts){if(!ts)return'';const d=new Date(ts);return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');}
-function lsTextoArtigo(lei,art){const t=lsTextos[lei];return t&&t.arts?t.arts[art]:undefined;}
+function lsTextoArtigo(lei,art){const t=lsLeiCarregada(lei);return t&&t.arts?t.arts[art]:undefined;}
 // Destaques: parágrafos citados nos itens da Lupa errados daquele artigo.
 function lsMarcasDeParagrafo(g){
   const s=new Set();
@@ -258,10 +338,18 @@ function lsAbrirQuestao(det){
 function lsCorpoGrupo(g){
   let h='';
   if(g.tipo==='art'){
-    const txt=lsTextoArtigo(g.lei,g.art),info=lsLeiInfo(g.lei);
-    if(txt!==undefined)h+=`<div class="ls-artigo">${lsHtmlArtigo(txt,g)}</div>`;
-    else if(lsTextos[g.lei])h+=`<div class="ls-aviso">O texto carregado de ${esc(g.lei)} não tem o art. ${esc(g.art)} (pode ser artigo de outra lei citado no comentário).</div>`;
-    else h+=`<div class="ls-aviso">O texto de <b>${esc(g.lei)}</b> ainda não foi carregado. ${info.url?`<a href="${esc(info.url)}" target="_blank" rel="noopener">Abrir a lei no Planalto ↗</a> · `:''}<a href="#" onclick="lsAba('textos');return false">Carregar o texto</a></div>`;
+    const info=lsLeiInfo(g.lei);
+    // blocos de texto: a própria lei e, nos casos da EC 132 e da CF, as leis irmãs
+    const blocos=lsLeisDoGrupo(g).map(k=>({k,txt:lsTextoArtigo(k,g.art)})).filter(b=>b.txt!==undefined);
+    if(blocos.length){
+      blocos.forEach((b,i)=>{
+        const rot=(b.k!==g.lei||blocos.length>1)?`<div class="ls-fonte">${esc(b.k)}, art. ${esc(g.art)}</div>`:'';
+        if(i===0)h+=`${rot}<div class="ls-artigo">${lsHtmlArtigo(b.txt,g)}</div>`;
+        else h+=`<details class="ls-outra"><summary>Ver também: ${esc(b.k)}, art. ${esc(g.art)}</summary><div class="ls-artigo">${lsHtmlArtigo(b.txt,null)}</div></details>`;
+      });
+    }
+    else if(lsLeiCarregada(g.lei))h+=`<div class="ls-aviso">O texto de ${esc(g.lei)} não tem o art. ${esc(g.art)} (pode estar revogado, ou ser artigo de outra lei citado no comentário).${info.url?` <a href="${esc(info.url)}" target="_blank" rel="noopener">Abrir a lei no Planalto ↗</a>`:''}</div>`;
+    else h+=`<div class="ls-aviso">O texto de <b>${esc(g.lei)}</b> não está no site${lsTemTexto(g.lei)?' (não consegui baixar agora; tente de novo com internet)':''}. ${info.url?`<a href="${esc(info.url)}" target="_blank" rel="noopener">Abrir a lei no Planalto ↗</a> · `:''}<a href="#" onclick="lsAba('textos');return false">Colar o texto</a></div>`;
   }
   h+=lsHtmlErros(g);
   const kk=esc(g.k).replace(/'/g,'&#39;');
@@ -286,11 +374,16 @@ function lsResumoGrupo(g){
   const tit=g.tipo==='art'?esc(g.k):esc(g.rot);
   return `<span class="ls-tit">${tit}</span><span class="ls-mat">${esc(g.mat)}</span><span class="ls-n">${esc(n)}</span> ${lsSelos(g)}`;
 }
-function lsAoAbrir(det){
+async function lsAoAbrir(det){
   if(!det.open)return;
   const corpo=det.querySelector(':scope > .ls-corpo');if(!corpo||corpo.dataset.ok)return;
   const g=lsPorChave.get(det.dataset.k);if(!g)return;
-  corpo.innerHTML=lsCorpoGrupo(g);corpo.dataset.ok='1';
+  corpo.dataset.ok='1';
+  if(g.tipo==='art'&&lsLeisDoGrupo(g).some(k=>!lsLeiCarregada(k)&&lsIndice&&lsIndice[k])){
+    corpo.innerHTML='<div class="lupa-sub">Carregando o texto da lei…</div>';
+    await Promise.all(lsLeisDoGrupo(g).map(lsGarantirLei));
+  }
+  corpo.innerHTML=lsCorpoGrupo(g);
 }
 function lsMarcar(k,acao){
   const m=lsMarcas(),o=m[k]||{};
@@ -338,9 +431,9 @@ function lsHtmlErrosView(){
   const mats=[...new Set(lsGrupos.flatMap(g=>[...g.mats]))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   const chips=[['pend','Não lidos'],['todos','Todos'],['fragil','Frágeis e leeches'],['ne','Não entendi'],['semart','Sem artigo'],['lidos','Lidos']];
   const lista=lsFiltrar(),mostra=LSV.mais?lista:lista.slice(0,LS_LIMITE_LISTA);
-  const semTexto=[...new Set(lsGrupos.filter(g=>g.tipo==='art'&&!lsTextos[g.lei]).map(g=>g.lei))];
+  const semTexto=[...new Set(lsGrupos.filter(g=>g.tipo==='art'&&!lsTemTexto(g.lei)).map(g=>g.lei))];
   return `<div class="lupa-nums ls-cont" id="ls-cont"></div>
-    ${semTexto.length?`<div class="ls-aviso" style="margin-bottom:12px">Sem texto carregado: <b>${semTexto.map(esc).join(', ')}</b>. Os cards dessas leis mostram só as questões e o link. <a href="#" onclick="lsAba('textos');return false">Carregar textos</a></div>`:''}
+    ${semTexto.length?`<div class="ls-aviso" style="margin-bottom:12px">Sem texto no site: <b>${semTexto.map(esc).join(', ')}</b>. Os cards dessas leis mostram só as questões e o link. <a href="#" onclick="lsAba('textos');return false">Colar o texto</a></div>`:''}
     <div class="ls-filtros">
       ${chips.map(([v,r])=>`<button class="chip ${LSV.filtro===v?'active':''}" onclick="lsSet('filtro','${v}')">${r}</button>`).join('')}
       <select class="config-select" onchange="lsSet('mat',this.value)" style="min-width:150px"><option value="">Todas as matérias</option>${mats.map(m=>`<option value="${esc(m)}" ${LSV.mat===m?'selected':''}>${esc(m)}</option>`).join('')}</select>
@@ -358,67 +451,22 @@ function lsBuscar(v){
   LSV.busca=v;clearTimeout(lsBuscaT);
   lsBuscaT=setTimeout(()=>{const el=document.getElementById('ls-lista');if(!el)return;const lista=lsFiltrar();el.innerHTML=lsHtmlLista(LSV.mais?lista:lista.slice(0,LS_LIMITE_LISTA),lista.length);},180);
 }
-// Lei inteira
-function lsHtmlLeiView(){
-  const leis=Object.keys(lsTextos);
-  if(!leis.length)return `<div class="ls-aviso">Nenhum texto de lei carregado ainda. <a href="#" onclick="lsAba('textos');return false">Carregar o texto de uma lei</a> (uma vez só por lei).</div>`;
-  if(!LSV.lei||!lsTextos[LSV.lei])LSV.lei=leis[0];
-  const t=lsTextos[LSV.lei];
-  const comErro=t.ordem.filter(a=>lsPorChave.has(LSV.lei+', art. '+a)).length;
-  return `<div class="ls-filtros">
-      <select class="config-select" onchange="lsSet('lei',this.value)" style="min-width:200px">${leis.map(k=>`<option value="${esc(k)}" ${LSV.lei===k?'selected':''}>${esc(lsLeiInfo(k).nome)}</option>`).join('')}</select>
-      <input class="config-input" placeholder="Artigo ou palavra: 150, anterioridade…" value="${esc(LSV.buscaLei)}" oninput="lsBuscarLei(this.value)" style="width:260px">
-      <label class="dash-chk"><input type="checkbox" ${LSV.soErro?'checked':''} onchange="lsSet('soErro',this.checked)"> só artigos com erro</label>
-    </div>
-    <div class="lupa-sub" style="margin:0 0 10px">${t.ordem.length} artigos · ${comErro} com erro ou Difícil · texto carregado em ${esc(t.em||'')}</div>
-    <div id="ls-lei-lista">${lsHtmlLeiLista()}</div>`;
-}
-function lsHtmlLeiLista(){
-  const t=lsTextos[LSV.lei];if(!t)return'';
-  const b=String(LSV.buscaLei||'').trim();
-  const num=/^\d{1,4}(-[A-Za-z])?$/.test(b)?b.toUpperCase():null;
-  const nb=(!num&&b&&typeof normFrag==='function')?normFrag(b):'';
-  const arts=t.ordem.filter(a=>{
-    const g=lsPorChave.get(LSV.lei+', art. '+a);
-    if(LSV.soErro&&!g)return false;
-    if(num)return a===num||a.startsWith(num+'-');
-    if(nb)return normFrag(t.arts[a]).includes(nb);
-    return true;
-  });
-  if(!arts.length)return '<div class="lupa-sub" style="padding:14px 0">Nenhum artigo encontrado.</div>';
-  return arts.map(a=>{
-    const g=lsPorChave.get(LSV.lei+', art. '+a);
-    const ini=String(t.arts[a]).split('\n')[0].replace(/^Art\.?\s*[\d.]+\s*(?:º|°|o)?(?:\s*[-–]\s*[A-Z])?\.?\s*/,'');
-    return `<details class="ls-card ls-art${g?' ls-temerro':''}" data-lei="${esc(LSV.lei)}" data-art="${esc(a)}" ontoggle="lsAoAbrirArtigo(this)"${num&&arts.length===1?' open':''}>
-      <summary><span class="ls-tit">Art. ${esc(a)}</span><span class="ls-ini">${esc(ini.slice(0,110))}${ini.length>110?'…':''}</span>${g?` <span class="ls-b ls-b-novo">${g.erros} erro${g.erros===1?'':'s'}${g.dif?' · '+g.dif+' difícil':''}</span> ${lsSelos(g)}`:''}</summary><div class="ls-corpo"></div></details>`;
-  }).join('');
-}
-function lsAoAbrirArtigo(det){
-  if(!det.open)return;
-  const corpo=det.querySelector(':scope > .ls-corpo');if(!corpo||corpo.dataset.ok)return;
-  const lei=det.dataset.lei,art=det.dataset.art,g=lsPorChave.get(lei+', art. '+art);
-  const txt=lsTextoArtigo(lei,art);
-  corpo.innerHTML=`<div class="ls-artigo">${lsHtmlArtigo(txt||'',g)}</div>${g?lsHtmlErros(g):''}`;
-  corpo.dataset.ok='1';
-}
-let lsBuscaLeiT=null;
-function lsBuscarLei(v){
-  LSV.buscaLei=v;clearTimeout(lsBuscaLeiT);
-  lsBuscaLeiT=setTimeout(()=>{const el=document.getElementById('ls-lei-lista');if(el){el.innerHTML=lsHtmlLeiLista();el.querySelectorAll('details[open]').forEach(lsAoAbrirArtigo);}},200);
-}
 // Textos
 function lsHtmlTextosView(){
   const usadas=new Map();lsGrupos.forEach(g=>{if(g.tipo==='art')usadas.set(g.lei,(usadas.get(g.lei)||0)+1);});
-  const chaves=[...new Set([...LS_LEIS.map(l=>l.k),...Object.keys(lsTextos),...usadas.keys()])];
+  const chaves=[...new Set([...LS_LEIS.map(l=>l.k),...Object.keys(lsIndice||{}),...Object.keys(lsTextos),...usadas.keys()])];
   return `<div class="card lupa-card">
       <div class="lupa-h">📚 Leis</div>
       <table class="lupa-tab"><thead><tr><th>Lei</th><th>Artigos com erro</th><th>Texto</th><th></th></tr></thead><tbody>
-      ${chaves.map(k=>{const i=lsLeiInfo(k),t=lsTextos[k];const kk=esc(k).replace(/'/g,'&#39;');return `<tr><td>${esc(i.nome)}</td><td>${usadas.get(k)||'—'}</td><td>${t?`<span class="ls-b ls-b-li">${t.ordem.length} artigos · ${esc(t.em||'')}</span>`:'<span style="color:var(--muted)">não carregado</span>'}</td><td style="white-space:nowrap">${i.url?`<a href="${esc(i.url)}" target="_blank" rel="noopener">Planalto ↗</a>`:''}${t?` · <a href="#" data-k="${kk}" onclick="lsApagarTexto(this.dataset.k);return false">apagar</a>`:''}</td></tr>`;}).join('')}
+      ${chaves.map(k=>{const i=lsLeiInfo(k),t=lsTextos[k],e=lsIndice&&lsIndice[k];const kk=esc(k).replace(/'/g,'&#39;');
+        const st=t?`<span class="ls-b ls-b-li">colado por você · ${t.ordem.length} artigos · ${esc(t.em||'')}</span>`:e?`<span class="ls-b ls-b-li">vem com o site · ${e.n} artigos · Planalto em ${esc(e.em||'')}</span>`:'<span style="color:var(--muted)">sem texto</span>';
+        return `<tr><td>${esc(i.nome)}</td><td>${usadas.get(k)||'—'}</td><td>${st}</td><td style="white-space:nowrap">${i.url?`<a href="${esc(i.url)}" target="_blank" rel="noopener">Planalto ↗</a>`:''}${t?` · <a href="#" data-k="${kk}" onclick="lsApagarTexto(this.dataset.k);return false">apagar o colado</a>`:''}</td></tr>`;}).join('')}
       </tbody></table>
+      <div class="lupa-sub">Os textos que vêm com o site são uma cópia do Planalto na data indicada. Lei alterada depois disso precisa ser atualizada (ou cole o texto novo abaixo).</div>
     </div>
     <div class="card lupa-card" style="margin-top:14px">
-      <div class="lupa-h">📥 Carregar o texto de uma lei</div>
-      <div class="lupa-sub" style="margin-top:0">Abra a lei no Planalto (versão compilada), selecione tudo (Ctrl+A), copie e cole aqui. O site separa por artigo e mostra a contagem antes de gravar. É uma vez só por lei; importar de novo substitui o texto.</div>
+      <div class="lupa-h">📥 Colar o texto de outra lei</div>
+      <div class="lupa-sub" style="margin-top:0">Para leis que não vêm com o site (as locais, quando sair o edital): abra a lei, selecione tudo (Ctrl+A), copie e cole aqui. O site separa por artigo e mostra a contagem antes de gravar. Atenção: no texto colado, a redação antiga (riscada na página) vem junto com a nova; prefira a versão compilada da lei.</div>
       <div class="ls-filtros" style="margin-top:10px">
         <select class="config-select" id="ls-imp-lei" onchange="lsTrocaLeiImp()" style="min-width:220px"><option value="">De qual lei é o texto?</option>${LS_LEIS.map(l=>`<option value="${esc(l.k)}">${esc(l.nome)}</option>`).join('')}<option value="__outra">Outra lei…</option></select>
         <input class="config-input" id="ls-imp-outra" placeholder="Nome curto, ex.: LC 116/2003" style="display:none;width:220px">
@@ -426,21 +474,20 @@ function lsHtmlTextosView(){
       </div>
       <textarea id="ls-imp-txt" class="ls-ta" placeholder="Cole aqui o texto da lei inteira…" oninput="lsAoColar()"></textarea>
       <button class="btn btn-primary" onclick="lsImportarTexto()">Importar texto</button>
-      <div class="lupa-sub">Outras leis só aparecem em “Meus erros” se a detecção de artigo reconhecer a lei no comentário; mesmo assim dá para navegar por elas em “Lei inteira”.</div>
+      <div class="lupa-sub">Um artigo só aparece em “Meus erros” com o texto se a detecção reconhecer a lei no comentário da questão. Hoje ela reconhece: CTN, CF, LC 87, LC 214, LC 227, EC 132 e Lei 6.830.</div>
     </div>`;
 }
 async function renderLeiSeca(semRecoleta){
   const el=document.getElementById('ls-corpo');if(!el)return;
   if(!semRecoleta||!lsGrupos.length){
     if(!el.innerHTML)el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:20px 0">Lendo o histórico…</div>';
-    await lsCarregarTextos();
+    await lsCarregarTextos();await lsCarregarIndice();
     try{await lsColetar();}catch(e){console.warn('[QuestIA] lei seca:',e);lsGrupos=[];lsPorChave=new Map();}
   }
-  const abas=[['erros','Meus erros'],['lei','Lei inteira'],['textos','Textos das leis']];
+  const abas=[['erros','Meus erros'],['textos','Textos das leis']];
   el.innerHTML=`<div class="ls-abas">${abas.map(([v,r])=>`<button class="ls-aba${LSV.aba===v?' on':''}" onclick="lsAba('${v}')">${r}</button>`).join('')}</div>`
-    +(LSV.aba==='lei'?lsHtmlLeiView():LSV.aba==='textos'?lsHtmlTextosView():lsHtmlErrosView());
+    +(LSV.aba==='textos'?lsHtmlTextosView():lsHtmlErrosView());
   lsAtualizarContadores();
-  el.querySelectorAll('details.ls-art[open]').forEach(lsAoAbrirArtigo);
 }
 document.addEventListener('toggle',e=>{const t=e.target;if(t&&t.classList&&t.classList.contains('ls-q')&&t.open)lsAbrirQuestao(t);},true);
 
@@ -456,10 +503,10 @@ document.addEventListener('toggle',e=>{const t=e.target;if(t&&t.classList&&t.cla
 .ls-card>summary::-webkit-details-marker{display:none}
 .ls-card[open]>summary{border-bottom:1px solid var(--border)}
 .ls-card.ls-lido>summary .ls-tit{color:var(--muted);font-weight:600}
-.ls-card.ls-temerro{border-left:3px solid var(--accent)}
 .ls-tit{font-weight:700;font-size:14px;color:var(--ink)}
-.ls-mat,.ls-n,.ls-ini{font-size:12px;color:var(--muted)}
-.ls-ini{flex:1 1 220px;min-width:0}
+.ls-mat,.ls-n{font-size:12px;color:var(--muted)}
+.ls-fonte{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.ls-outra{margin-bottom:12px}.ls-outra>summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent2);margin-bottom:6px}
 .ls-corpo{padding:14px}
 .ls-artigo{font-family:Georgia,'Times New Roman',serif;font-size:15.5px;line-height:1.65;color:var(--ink);background:var(--surface2);border-radius:8px;padding:14px 16px;margin-bottom:12px}
 .ls-l{margin:0 0 7px}.ls-l:last-child{margin-bottom:0}
