@@ -17,7 +17,14 @@ const css=`
 .lsa-mark[data-color="yellow"]{background:#fff1a8}.lsa-mark[data-color="green"]{background:#c9f2d0}
 .lsa-mark[data-color="blue"]{background:#cce5ff}.lsa-mark[data-color="pink"]{background:#ffd6e7}.lsa-mark[data-color="purple"]{background:#e7d7ff}
 .lsa-help{font-size:11px;color:var(--muted);margin:0 0 8px}
-.lsa-note-visible{display:inline-block;margin:4px 0 4px 7px;padding:4px 9px;border-left:3px solid #8b70c9;border-radius:4px;background:#f1ebff;color:#49376e;font:12px/1.45 system-ui;white-space:pre-wrap;vertical-align:middle;cursor:pointer}
+.lsa-note-visible{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin:0 3px;border:1px solid #b9a4e8;border-radius:50%;background:#f1ebff;color:#60449a;font:14px system-ui;vertical-align:middle;cursor:pointer}
+.lsa-note-pop{position:fixed;z-index:99999;width:min(360px,calc(100vw - 28px));padding:12px;border:1px solid #c9b9e8;border-radius:10px;background:#fff;color:#222;box-shadow:0 8px 28px #0003;font:13px system-ui}
+.lsa-note-pop strong{display:block;margin-bottom:8px}
+.lsa-note-pop textarea{box-sizing:border-box;width:100%;min-height:110px;resize:vertical;padding:9px;border:1px solid #ccc;border-radius:7px;font:13px/1.45 system-ui;color:#222;background:#fff}
+.lsa-note-pop .lsa-note-actions{display:flex;gap:7px;justify-content:flex-end;margin-top:9px}
+.lsa-note-pop button{padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#f7f7f7;color:#222;cursor:pointer}
+.lsa-note-pop button.primary{background:#60449a;color:white;border-color:#60449a}
+.lsa-note-pop .lsa-note-delete{margin-right:auto;color:#a22}
 `;
 function styles(){if(document.getElementById('lsa-style'))return;const s=document.createElement('style');s.id='lsa-style';s.textContent=css;document.head.appendChild(s);}
 function docKey(el){
@@ -38,7 +45,33 @@ function stack(el){if(!undoStack.has(el))undoStack.set(el,[]);if(!redoStack.has(
 function record(el,a){stack(el);undoStack.get(el).push(a);if(undoStack.get(el).length>100)undoStack.get(el).shift();redoStack.get(el).length=0;}
 function findAnnotation(el,id){return el.querySelector('[data-annotation="'+CSS.escape(id)+'"]');}
 function findNote(el,id){return el.querySelector('[data-note-for="'+CSS.escape(id)+'"]');}
-function showNote(mark,a){if(!a.note)return;const box=document.createElement('span');box.className='lsa-note-visible';box.dataset.noteFor=a.id;box.textContent='💬 '+a.note;box.title='Clique para editar comentário';mark.after(box);}
+function showNote(mark,a){if(!a.note)return;const box=document.createElement('button');box.type='button';box.className='lsa-note-visible';box.dataset.noteFor=a.id;box.textContent='💬';box.title='Abrir comentário';mark.after(box);}
+function closeNoteEditor(article){article.querySelector('.lsa-note-pop')?.remove();}
+function openNoteEditor(article,{annotation=null,range=null}={}){
+ closeNoteEditor(article);
+ const pop=document.createElement('div');pop.className='lsa-note-pop';
+ const title=document.createElement('strong');title.textContent=annotation?'Comentário':'Novo comentário';
+ const area=document.createElement('textarea');area.placeholder='Digite sua observação sobre o trecho selecionado…';area.value=annotation?.note||'';
+ const actions=document.createElement('div');actions.className='lsa-note-actions';
+ const del=document.createElement('button');del.className='lsa-note-delete';del.textContent='Excluir';del.hidden=!annotation;
+ const cancel=document.createElement('button');cancel.textContent='Cancelar';
+ const saveBtn=document.createElement('button');saveBtn.className='primary';saveBtn.textContent='Salvar';
+ actions.append(del,cancel,saveBtn);pop.append(title,area,actions);document.body.append(pop);
+ const rect=annotation?findAnnotation(article,annotation.id)?.getBoundingClientRect():range?.getBoundingClientRect();
+ pop.style.left=Math.max(14,Math.min((rect?.left||20),innerWidth-pop.offsetWidth-14))+'px';
+ pop.style.top=Math.max(14,Math.min((rect?.bottom||100)+8,innerHeight-pop.offsetHeight-14))+'px';
+ area.focus();
+ cancel.onclick=()=>closeNoteEditor(article);
+ saveBtn.onclick=async()=>{
+  const value=area.value.trim();if(!value){area.focus();return;}
+  saveBtn.disabled=true;saveBtn.textContent='Salvando…';
+  if(annotation){const mark=findAnnotation(article,annotation.id);const a={...annotation,note:value};
+   try{await request('POST',a);const list=loaded.get(article)||[];const i=list.findIndex(x=>x.id===a.id);if(i>=0)list[i]=a;else list.push(a);loaded.set(article,list);if(mark){mark.dataset.kind='note';mark.title='Comentário';}findNote(article,a.id)?.remove();if(mark)showNote(mark,a);record(article,a);status(article,'Comentário sincronizado');closeNoteEditor(article);}
+   catch(e){saveBtn.disabled=false;saveBtn.textContent='Salvar';status(article,'Falha ao salvar');alert('Não foi possível salvar o comentário: '+e.message);}
+  }else{closeNoteEditor(article);await addMark(article,'note','purple',value,range);}
+ };
+ del.onclick=async()=>{if(!annotation)return;const mark=findAnnotation(article,annotation.id);await remove(article,annotation.id,mark);closeNoteEditor(article);};
+}
 async function undo(el){stack(el);const a=undoStack.get(el).pop();if(!a)return;const mark=findAnnotation(el,a.id);findNote(el,a.id)?.remove();if(mark)mark.replaceWith(...mark.childNodes);redoStack.get(el).push(a);try{await request('DELETE',{id:a.id});status(el,'Desfeito e sincronizado');}catch(e){status(el,'Erro ao sincronizar');alert('A marcação foi desfeita nesta tela, mas não foi possível sincronizar a exclusão: '+e.message);}}
 async function redo(el){stack(el);const a=redoStack.get(el).pop();if(!a)return;if(!findAndWrap(el,a)){redoStack.get(el).push(a);alert('Não localizei o trecho original para refazer a marcação. O texto não foi alterado.');return;}undoStack.get(el).push(a);await save(el,a);}
 function status(el,msg){const s=el.querySelector('.lsa-status');if(s)s.textContent=msg;}
@@ -60,8 +93,8 @@ function wrapRange(article,range,a){
  if(a.note)span.title='Comentário: '+a.note;
  try{span.appendChild(range.extractContents());range.insertNode(span);showNote(span,a);return span;}catch(e){return null;}
 }
-async function addMark(article,kind,color,note){
- const sel=selectedRange(article);if(!sel){alert('Selecione primeiro um trecho do texto da lei.');return;}
+async function addMark(article,kind,color,note,providedRange=null){
+ const sel=providedRange?{range:providedRange,quote:providedRange.toString().trim()}:selectedRange(article);if(!sel||!sel.quote){alert('Selecione primeiro um trecho do texto da lei.');return;}
  const range=sel.range.cloneRange();
  const node=range.startContainer.nodeType===3?range.startContainer:null;
  const ctx=node?textContext(node,range.startOffset,range.endOffset):{prefix:'',suffix:''};
@@ -89,7 +122,7 @@ function toolbar(article){
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.color){const next={kind:'highlight',color:b.dataset.color};const cur=activeTool.get(article);setTool(cur?.kind===next.kind&&cur.color===next.color?null:next);return;}
   if(b.dataset.action==='underline'){const cur=activeTool.get(article);setTool(cur?.kind==='underline'?null:{kind:'underline',color:'yellow'});return;}
-  if(b.dataset.action==='note'){setTool(null);const n=prompt('Comentário sobre o trecho selecionado:');if(n!==null&&n.trim())return addMark(article,'note','purple',n.trim());return;}
+  if(b.dataset.action==='note'){setTool(null);const sel=selectedRange(article);if(!sel){alert('Selecione primeiro o trecho que receberá o comentário.');return;}return openNoteEditor(article,{range:sel.range.cloneRange()});}
   if(b.dataset.action==='undo'){setTool(null);await undo(article);return;}
   if(b.dataset.action==='redo'){setTool(null);await redo(article);return;}
  });
@@ -106,9 +139,11 @@ function toolbar(article){
  article.addEventListener('touchend',applyActive);
  article.addEventListener('mouseleave',()=>setTool(null));
  article.addEventListener('click',async e=>{
-  const visibleNote=e.target.closest('.lsa-note-visible');const mark=visibleNote?findAnnotation(article,visibleNote.dataset.noteFor):e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
+  const visibleNote=e.target.closest('.lsa-note-visible');
+  if(visibleNote&&article.contains(visibleNote)){const id=visibleNote.dataset.noteFor;const a=loaded.get(article)?.find(x=>x.id===id);if(a)openNoteEditor(article,{annotation:a});return;}
+  const mark=e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
   const id=mark.dataset.annotation;
-  if(mark.dataset.kind==='note'){const next=prompt('Editar comentário (deixe vazio para remover):',mark.title.replace(/^Comentário: /,'').replace(/ \(clique para editar\)$/,''));if(next===null)return;if(!next.trim()){await remove(article,id,mark);return;}mark.title='Comentário: '+next.trim();const a=loaded.get(article)?.find(x=>x.id===id);if(a){a.note=next.trim();findNote(article,id)?.remove();showNote(mark,a);await save(article,a);}return;}
+  if(mark.dataset.kind==='note'){const a=loaded.get(article)?.find(x=>x.id===id);if(a)openNoteEditor(article,{annotation:a});return;}
   if(confirm('Apagar esta marcação?'))await remove(article,id,mark);
  });
  load(article);
