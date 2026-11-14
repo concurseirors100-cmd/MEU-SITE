@@ -75,6 +75,47 @@ function showNote(mark,a){
   head.addEventListener('pointermove',move);head.addEventListener('pointerup',up,{once:true});});
  pin.onclick=()=>{box.scrollIntoView({block:'nearest',behavior:'smooth'});body.focus();};
 }
+
+const freeNoteMode=new WeakMap();
+function renderFreeNote(article,a){
+ if(article.querySelector('[data-note-box="'+CSS.escape(a.id)+'"]'))return;
+ if(getComputedStyle(article).position==='static')article.style.position='relative';
+ const box=document.createElement('div');box.className='lsa-note-box';box.dataset.noteBox=a.id;
+ box.style.left=(Number(a.x)||24)+'px';box.style.top=(Number(a.y)||70)+'px';
+ box.style.width=Math.max(170,Math.min(700,Number(a.width)||260))+'px';
+ box.style.height=Math.max(90,Math.min(700,Number(a.height)||145))+'px';
+ const head=document.createElement('div');head.className='lsa-note-head';
+ const label=document.createElement('span');label.textContent='COMENTÁRIO LIVRE · arraste para mover';
+ const del=document.createElement('button');del.type='button';del.textContent='×';del.title='Excluir comentário';
+ head.append(label,del);
+ const body=document.createElement('div');body.className='lsa-note-body';body.contentEditable='true';body.spellcheck=true;body.textContent=a.note||'';
+ body.dataset.placeholder='Digite seu comentário…';box.append(head,body);article.append(box);
+ let timer;
+ const persist=async()=>{
+  const next={...a,note:body.innerText.trim(),x:Math.round(box.offsetLeft),y:Math.round(box.offsetTop),width:Math.round(box.getBoundingClientRect().width),height:Math.round(box.getBoundingClientRect().height)};
+  box.classList.add('lsa-saving');
+  try{await request('POST',next);Object.assign(a,next);const list=loaded.get(article)||[];const i=list.findIndex(v=>v.id===a.id);if(i<0)list.push(next);else list[i]=next;loaded.set(article,list);status(article,'Comentário sincronizado');}
+  catch(e){box.classList.add('lsa-error');status(article,'Falha ao sincronizar comentário');console.error(e);}
+  finally{box.classList.remove('lsa-saving');}
+ };
+ body.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(persist,700);});
+ body.addEventListener('blur',persist);
+ const ro=new ResizeObserver(()=>{clearTimeout(timer);timer=setTimeout(persist,500);});ro.observe(box);
+ del.addEventListener('click',async()=>{if(!confirm('Excluir esta caixa de comentário?'))return;try{await request('DELETE',{id:a.id});box.remove();loaded.set(article,(loaded.get(article)||[]).filter(v=>v.id!==a.id));status(article,'Comentário excluído');}catch(e){alert('Não foi possível excluir: '+e.message);}});
+ head.addEventListener('pointerdown',e=>{
+  if(e.target===del)return;e.preventDefault();head.setPointerCapture(e.pointerId);
+  const sx=e.clientX,sy=e.clientY,l=box.offsetLeft,t=box.offsetTop;
+  const move=ev=>{box.style.left=Math.max(0,l+ev.clientX-sx)+'px';box.style.top=Math.max(0,t+ev.clientY-sy)+'px';};
+  const up=()=>{head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);persist();};
+  head.addEventListener('pointermove',move);head.addEventListener('pointerup',up,{once:true});
+ });
+ if(!a.note)body.focus();
+}
+async function createFreeNote(article,x,y){
+ const a={id:makeId(),doc_key:article.dataset.lsaDoc,quote:'',prefix:'',suffix:'',kind:'note',color:'purple',note:'',x:Math.max(0,Math.round(x)),y:Math.max(0,Math.round(y)),width:260,height:145};
+ try{await request('POST',a);const list=loaded.get(article)||[];list.push(a);loaded.set(article,list);renderFreeNote(article,a);status(article,'Caixa criada e sincronizada');}
+ catch(e){alert('Não foi possível criar a caixa: '+e.message);status(article,'Falha ao criar caixa');}
+}
 function closeNoteEditor(article){document.querySelector('.lsa-note-pop')?.remove();}
 function openNoteEditor(article,{annotation=null,range=null}={}){
  closeNoteEditor(article);
@@ -139,7 +180,7 @@ function toolbar(article){
  const bar=document.createElement('div');bar.className='lsa-tools';
  bar.innerHTML='<strong>✍️ Anotações</strong><span>Grifar:</span>'+
  Object.entries(COLORS).map(([k,v])=>'<button class="lsa-color" data-color="'+k+'" title="Grifar ('+k+')" style="background:'+v+'"></button>').join('')+
- '<button data-action="underline">Sublinhar</button><button data-action="note">💬 Comentário</button><button data-action="undo">↶ Desfazer</button><button data-action="redo">↷ Refazer</button><span class="lsa-status">Carregando…</span>';
+ '<button data-action="underline">Sublinhar</button><button data-action="note">💬 Comentário</button><button data-action="free-note">▢ Caixa livre</button><button data-action="undo">↶ Desfazer</button><button data-action="redo">↷ Refazer</button><span class="lsa-status">Carregando…</span>';
  article.prepend(bar);
  const help=document.createElement('div');help.className='lsa-help';help.textContent='Selecione um trecho e escolha uma ferramenta. As marcações são sincronizadas entre dispositivos.';bar.after(help);
  function setTool(tool){
@@ -152,6 +193,7 @@ function toolbar(article){
   if(b.dataset.color){const next={kind:'highlight',color:b.dataset.color};const cur=activeTool.get(article);setTool(cur?.kind===next.kind&&cur.color===next.color?null:next);return;}
   if(b.dataset.action==='underline'){const cur=activeTool.get(article);setTool(cur?.kind==='underline'?null:{kind:'underline',color:'yellow'});return;}
   if(b.dataset.action==='note'){setTool(null);const sel=selectedRange(article);if(!sel){alert('Selecione primeiro o trecho que receberá o comentário.');return;}return openNoteEditor(article,{range:sel.range.cloneRange()});}
+  if(b.dataset.action==='free-note'){const on=!freeNoteMode.get(article);freeNoteMode.set(article,on);setTool(null);b.classList.toggle('lsa-active',on);status(article,on?'Modo ativo: clique no local desejado do artigo':'Modo de caixa livre desativado');return;}
   if(b.dataset.action==='undo'){setTool(null);await undo(article);return;}
   if(b.dataset.action==='redo'){setTool(null);await redo(article);return;}
  });
@@ -168,6 +210,11 @@ function toolbar(article){
  article.addEventListener('touchend',applyActive);
  article.addEventListener('mouseleave',()=>setTool(null));
  article.addEventListener('click',async e=>{
+  if(freeNoteMode.get(article)&&!e.target.closest('.lsa-tools,.lsa-note-box,.lsa-mark,.lsa-note-visible')){
+   const r=article.getBoundingClientRect();freeNoteMode.set(article,false);
+   bar.querySelector('[data-action="free-note"]')?.classList.remove('lsa-active');
+   await createFreeNote(article,e.clientX-r.left+article.scrollLeft,e.clientY-r.top+article.scrollTop);return;
+  }
   const visibleNote=e.target.closest('.lsa-note-visible');
   if(visibleNote&&article.contains(visibleNote)){const box=article.querySelector('[data-note-box="'+CSS.escape(visibleNote.dataset.noteFor)+'"]');box?.scrollIntoView({block:'nearest',behavior:'smooth'});return;}
   const mark=e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
@@ -196,7 +243,7 @@ async function load(article){
  try{
   const q=await request('GET',null,API+'?doc='+encodeURIComponent(article.dataset.lsaDoc));
   loaded.set(article,q.annotations||[]);
-  (q.annotations||[]).forEach(a=>findAndWrap(article,a));
+  (q.annotations||[]).forEach(a=>{if(a.kind==='note'&&!a.quote)renderFreeNote(article,a);else findAndWrap(article,a);});
   status(article,'Sincronizado');
  }catch(e){status(article,'Sem sincronização');console.warn('[QuestIA anotações]',e);}
 }
