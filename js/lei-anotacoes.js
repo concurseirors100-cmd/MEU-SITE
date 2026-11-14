@@ -25,7 +25,11 @@ const css=`
 .lsa-note-box.lsa-saving{opacity:.72}.lsa-note-box.lsa-error{border-color:#c33}
 .lsa-typewriter{position:absolute;z-index:25;min-width:24px;min-height:22px;max-width:95%;width:max-content;box-sizing:border-box;color:#0645d8;background:transparent;font:16px/1.35 Arial,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;outline:none;border:1px dashed transparent;padding:1px 3px}
 .lsa-typewriter:focus{border-color:#9bb7ff;background:#fff}
-.lsa-typewriter-tools{position:absolute;left:0;top:-25px;display:flex;gap:3px;opacity:1;pointer-events:auto}
+.lsa-typewriter-tools{position:absolute;left:0;top:-29px;display:flex;gap:3px;opacity:0;visibility:hidden;pointer-events:none;z-index:2;transition:opacity .12s ease}
+.lsa-typewriter.lsa-selected .lsa-typewriter-tools{opacity:1;visibility:visible;pointer-events:auto}
+.lsa-typewriter.lsa-selected{z-index:40;border:1px dashed #9bb7ff;background:#fff}
+.lsa-typewriter [contenteditable=true]{min-width:20px;min-height:20px;outline:none;cursor:text}
+.lsa-typewriter-tools button{min-width:24px;min-height:24px;box-shadow:0 1px 3px #0002}
 
 .lsa-typewriter-tools button{border:1px solid #aaa;border-radius:3px;background:#fff;color:#333;padding:1px 5px;font:13px Arial;cursor:pointer}
 .lsa-typewriter-move{cursor:move;touch-action:none}
@@ -128,11 +132,14 @@ function renderTypewriter(article,a){
  article.style.setProperty('position','relative','important');
  const box=document.createElement('div');box.className='lsa-typewriter';box.style.position='absolute';box.dataset.typewriter=a.id;box.style.left=(Number(a.x)||0)+'px';box.style.top=(Number(a.y)||0)+'px';box.style.fontSize=Math.max(8,Math.min(48,Number(a.font_size)||16))+'px';
  const tools=document.createElement('div');tools.className='lsa-typewriter-tools';const move=document.createElement('button');move.type='button';move.className='lsa-typewriter-move';move.textContent='⠿';move.title='Arrastar texto';const plus=document.createElement('button');plus.type='button';plus.textContent='A+';const minus=document.createElement('button');minus.type='button';minus.textContent='A−';tools.append(move,plus,minus);
- const body=document.createElement('div');body.contentEditable='true';body.spellcheck=true;body.textContent=a.note||'';box.append(tools,body);article.append(box);let timer;
+ const body=document.createElement('div');body.contentEditable='true';body.setAttribute('contenteditable','true');body.spellcheck=true;body.textContent=a.note||'';box.append(tools,body);article.append(box);let timer;
+ const activate=()=>{article.querySelectorAll('.lsa-typewriter.lsa-selected').forEach(el=>el.classList.remove('lsa-selected'));box.classList.add('lsa-selected');};
+ box.addEventListener('pointerdown',e=>{if(e.target.closest('.lsa-typewriter-tools'))return;activate();});
+ body.addEventListener('focus',activate);
  const persist=async()=>{const next={...a,note:body.innerText,x:Math.round(box.offsetLeft),y:Math.round(box.offsetTop),font_size:parseInt(box.style.fontSize,10)||16};box.classList.add('lsa-saving');try{await request('POST',next);Object.assign(a,next);const list=loaded.get(article)||[];const i=list.findIndex(v=>v.id===a.id);if(i<0)list.push(next);else list[i]=next;loaded.set(article,list);status(article,'Texto sincronizado');}catch(e){box.classList.add('lsa-error');status(article,'Falha ao sincronizar texto');console.error(e);}finally{box.classList.remove('lsa-saving');}};
  body.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(persist,600);});body.addEventListener('blur',persist);
  plus.onclick=e=>{e.stopPropagation();box.style.fontSize=Math.min(48,(parseInt(box.style.fontSize,10)||16)+2)+'px';persist();body.focus();};minus.onclick=e=>{e.stopPropagation();box.style.fontSize=Math.max(8,(parseInt(box.style.fontSize,10)||16)-2)+'px';persist();body.focus();};
- move.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();move.setPointerCapture(e.pointerId);const sx=e.clientX,sy=e.clientY,l=box.offsetLeft,t=box.offsetTop;const mv=ev=>{box.style.left=Math.max(0,l+ev.clientX-sx)+'px';box.style.top=Math.max(0,t+ev.clientY-sy)+'px';};const up=()=>{move.removeEventListener('pointermove',mv);move.removeEventListener('pointerup',up);move.removeEventListener('pointercancel',up);persist();};move.addEventListener('pointermove',mv);move.addEventListener('pointerup',up,{once:true});move.addEventListener('pointercancel',up,{once:true});});
+ move.addEventListener('pointerdown',e=>{activate();e.preventDefault();e.stopPropagation();move.setPointerCapture(e.pointerId);const sx=e.clientX,sy=e.clientY,l=box.offsetLeft,t=box.offsetTop;const mv=ev=>{box.style.left=Math.max(0,l+ev.clientX-sx)+'px';box.style.top=Math.max(0,t+ev.clientY-sy)+'px';};const up=()=>{move.removeEventListener('pointermove',mv);move.removeEventListener('pointerup',up);move.removeEventListener('pointercancel',up);persist();};move.addEventListener('pointermove',mv);move.addEventListener('pointerup',up,{once:true});move.addEventListener('pointercancel',up,{once:true});});
  if(!a.note)body.focus();
 }
 async function createTypewriter(article,x,y){const a={id:makeId(),doc_key:article.dataset.lsaDoc,quote:'',prefix:'',suffix:'',kind:'note',color:'blue',note:'',x:Math.max(0,Math.round(x)),y:Math.max(0,Math.round(y)),font_size:16};try{await request('POST',a);const list=loaded.get(article)||[];list.push(a);loaded.set(article,list);renderTypewriter(article,a);status(article,'Texto inserido e sincronizado');}catch(e){alert('Não foi possível inserir o texto: '+e.message);status(article,'Falha ao inserir texto');}}
