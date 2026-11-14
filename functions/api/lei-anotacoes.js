@@ -51,7 +51,7 @@ export async function onRequest({request,env}){
       const color=['yellow','green','blue','pink','purple'].includes(x.color)?x.color:'yellow';
       const note=clean(x.note,4000),prefix=clean(x.prefix,100),suffix=clean(x.suffix,100);
       const px=Number.isFinite(Number(x.x))?Math.max(0,Math.min(100000,Number(x.x))):24,py=Number.isFinite(Number(x.y))?Math.max(0,Math.min(100000,Number(x.y))):70,pw=Number.isFinite(Number(x.width))?Math.max(170,Math.min(700,Number(x.width))):260,ph=Number.isFinite(Number(x.height))?Math.max(90,Math.min(700,Number(x.height))):145;
-      if(!id||!doc||!quote||!kind)return json(400,{error:'Campos obrigatórios ausentes.'});
+      if(!id||!doc||(!quote&&kind!=='note')||!kind)return json(400,{error:'Campos obrigatórios ausentes.'});
       const now=new Date().toISOString();
       await env.DB.prepare(`INSERT INTO lei_anotacoes(id,doc_key,quote,prefix,suffix,kind,color,note,x,y,width,height,created_at,updated_at)
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
