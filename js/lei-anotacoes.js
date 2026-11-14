@@ -17,6 +17,7 @@ const css=`
 .lsa-mark[data-color="yellow"]{background:#fff1a8}.lsa-mark[data-color="green"]{background:#c9f2d0}
 .lsa-mark[data-color="blue"]{background:#cce5ff}.lsa-mark[data-color="pink"]{background:#ffd6e7}.lsa-mark[data-color="purple"]{background:#e7d7ff}
 .lsa-help{font-size:11px;color:var(--muted);margin:0 0 8px}
+.lsa-note-visible{display:inline-block;margin:4px 0 4px 7px;padding:4px 9px;border-left:3px solid #8b70c9;border-radius:4px;background:#f1ebff;color:#49376e;font:12px/1.45 system-ui;white-space:pre-wrap;vertical-align:middle;cursor:pointer}
 `;
 function styles(){if(document.getElementById('lsa-style'))return;const s=document.createElement('style');s.id='lsa-style';s.textContent=css;document.head.appendChild(s);}
 function docKey(el){
@@ -36,7 +37,9 @@ async function request(method,data,url){
 function stack(el){if(!undoStack.has(el))undoStack.set(el,[]);if(!redoStack.has(el))redoStack.set(el,[]);}
 function record(el,a){stack(el);undoStack.get(el).push(a);if(undoStack.get(el).length>100)undoStack.get(el).shift();redoStack.get(el).length=0;}
 function findAnnotation(el,id){return el.querySelector('[data-annotation="'+CSS.escape(id)+'"]');}
-async function undo(el){stack(el);const a=undoStack.get(el).pop();if(!a)return;const mark=findAnnotation(el,a.id);if(mark)mark.replaceWith(...mark.childNodes);redoStack.get(el).push(a);try{await request('DELETE',{id:a.id});status(el,'Desfeito e sincronizado');}catch(e){status(el,'Erro ao sincronizar');alert('A marcação foi desfeita nesta tela, mas não foi possível sincronizar a exclusão: '+e.message);}}
+function findNote(el,id){return el.querySelector('[data-note-for="'+CSS.escape(id)+'"]');}
+function showNote(mark,a){if(!a.note)return;const box=document.createElement('span');box.className='lsa-note-visible';box.dataset.noteFor=a.id;box.textContent='💬 '+a.note;box.title='Clique para editar comentário';mark.after(box);}
+async function undo(el){stack(el);const a=undoStack.get(el).pop();if(!a)return;const mark=findAnnotation(el,a.id);findNote(el,a.id)?.remove();if(mark)mark.replaceWith(...mark.childNodes);redoStack.get(el).push(a);try{await request('DELETE',{id:a.id});status(el,'Desfeito e sincronizado');}catch(e){status(el,'Erro ao sincronizar');alert('A marcação foi desfeita nesta tela, mas não foi possível sincronizar a exclusão: '+e.message);}}
 async function redo(el){stack(el);const a=redoStack.get(el).pop();if(!a)return;if(!findAndWrap(el,a)){redoStack.get(el).push(a);alert('Não localizei o trecho original para refazer a marcação. O texto não foi alterado.');return;}undoStack.get(el).push(a);await save(el,a);}
 function status(el,msg){const s=el.querySelector('.lsa-status');if(s)s.textContent=msg;}
 function makeId(){return (crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));}
@@ -54,8 +57,8 @@ async function save(article,a){
 }
 function wrapRange(article,range,a){
  const span=document.createElement('span');span.className='lsa-mark';span.dataset.annotation=a.id;span.dataset.kind=a.kind;span.dataset.color=a.color||'yellow';
- if(a.note)span.title='Comentário: '+a.note+' (clique para editar)';
- try{span.appendChild(range.extractContents());range.insertNode(span);return span;}catch(e){return null;}
+ if(a.note)span.title='Comentário: '+a.note;
+ try{span.appendChild(range.extractContents());range.insertNode(span);showNote(span,a);return span;}catch(e){return null;}
 }
 async function addMark(article,kind,color,note){
  const sel=selectedRange(article);if(!sel){alert('Selecione primeiro um trecho do texto da lei.');return;}
@@ -103,9 +106,9 @@ function toolbar(article){
  article.addEventListener('touchend',applyActive);
  article.addEventListener('mouseleave',()=>setTool(null));
  article.addEventListener('click',async e=>{
-  const mark=e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
+  const visibleNote=e.target.closest('.lsa-note-visible');const mark=visibleNote?findAnnotation(article,visibleNote.dataset.noteFor):e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
   const id=mark.dataset.annotation;
-  if(mark.dataset.kind==='note'){const next=prompt('Editar comentário (deixe vazio para remover):',mark.title.replace(/^Comentário: /,'').replace(/ \(clique para editar\)$/,''));if(next===null)return;if(!next.trim()){await remove(article,id,mark);return;}mark.title='Comentário: '+next.trim()+' (clique para editar)';const a=loaded.get(article)?.find(x=>x.id===id);if(a){a.note=next.trim();await save(article,a);}return;}
+  if(mark.dataset.kind==='note'){const next=prompt('Editar comentário (deixe vazio para remover):',mark.title.replace(/^Comentário: /,'').replace(/ \(clique para editar\)$/,''));if(next===null)return;if(!next.trim()){await remove(article,id,mark);return;}mark.title='Comentário: '+next.trim();const a=loaded.get(article)?.find(x=>x.id===id);if(a){a.note=next.trim();findNote(article,id)?.remove();showNote(mark,a);await save(article,a);}return;}
   if(confirm('Apagar esta marcação?'))await remove(article,id,mark);
  });
  load(article);
@@ -113,7 +116,7 @@ function toolbar(article){
 
 async function remove(article,id,el){
  const a=loaded.get(article)?.find(x=>x.id===id);
- try{await request('DELETE',{id});if(a)record(article,a);el.replaceWith(...el.childNodes);status(article,'Sincronizado');}
+ try{await request('DELETE',{id});if(a)record(article,a);findNote(article,id)?.remove();el.replaceWith(...el.childNodes);status(article,'Sincronizado');}
  catch(e){alert('Não foi possível apagar: '+e.message);}
 }
 function findAndWrap(article,a){
