@@ -3,7 +3,7 @@
 'use strict';
 const API='/api/lei-anotacoes';
 const COLORS={yellow:'#fff1a8',green:'#c9f2d0',blue:'#cce5ff',pink:'#ffd6e7',purple:'#e7d7ff'};
-const undoStack=new WeakMap(),redoStack=new WeakMap(),loaded=new WeakMap(),busy=new WeakSet();
+const undoStack=new WeakMap(),redoStack=new WeakMap(),loaded=new WeakMap();
 const css=`
 .lsa-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;margin:0 0 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font:12px system-ui}
 .lsa-tools button{border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--ink);padding:5px 8px;cursor:pointer}
@@ -33,7 +33,10 @@ async function request(method,data,url){
  return j;
 }
 function stack(el){if(!undoStack.has(el))undoStack.set(el,[]);if(!redoStack.has(el))redoStack.set(el,[]);}
-function snapshot(el){stack(el);undoStack.get(el).push(el.innerHTML);if(undoStack.get(el).length>30)undoStack.get(el).shift();redoStack.get(el).length=0;}
+function record(el,a){stack(el);undoStack.get(el).push(a);if(undoStack.get(el).length>100)undoStack.get(el).shift();redoStack.get(el).length=0;}
+function findAnnotation(el,id){return el.querySelector('[data-annotation="'+CSS.escape(id)+'"]');}
+async function undo(el){stack(el);const a=undoStack.get(el).pop();if(!a)return;const mark=findAnnotation(el,a.id);if(mark)mark.replaceWith(...mark.childNodes);redoStack.get(el).push(a);try{await request('DELETE',{id:a.id});status(el,'Desfeito e sincronizado');}catch(e){status(el,'Erro ao sincronizar');alert('A marcação foi desfeita nesta tela, mas não foi possível sincronizar a exclusão: '+e.message);}}
+async function redo(el){stack(el);const a=redoStack.get(el).pop();if(!a)return;if(!findAndWrap(el,a)){redoStack.get(el).push(a);alert('Não localizei o trecho original para refazer a marcação. O texto não foi alterado.');return;}undoStack.get(el).push(a);await save(el,a);}
 function status(el,msg){const s=el.querySelector('.lsa-status');if(s)s.textContent=msg;}
 function makeId(){return (crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2));}
 function textContext(node,start,end){const p=node.textContent||'';return{prefix:p.slice(Math.max(0,start-60),start),suffix:p.slice(end,end+60)};}
@@ -59,9 +62,9 @@ async function addMark(article,kind,color,note){
  const node=range.startContainer.nodeType===3?range.startContainer:null;
  const ctx=node?textContext(node,range.startOffset,range.endOffset):{prefix:'',suffix:''};
  const a={id:makeId(),doc_key:article.dataset.lsaDoc,quote:sel.quote,prefix:ctx.prefix,suffix:ctx.suffix,kind,color,note:note||''};
- snapshot(article);
  if(!wrapRange(article,range,a)){alert('Não foi possível marcar essa seleção. Tente selecionar um trecho menor, dentro do mesmo parágrafo.');return;}
  getSelection()?.removeAllRanges();
+ record(article,a);
  await save(article,a);
 }
 function toolbar(article){
@@ -78,8 +81,8 @@ function toolbar(article){
   if(b.dataset.color)return addMark(article,'highlight',b.dataset.color,'');
   if(b.dataset.action==='underline')return addMark(article,'underline','yellow','');
   if(b.dataset.action==='note'){const n=prompt('Comentário sobre o trecho selecionado:');if(n!==null&&n.trim())return addMark(article,'note','purple',n.trim());return;}
-  if(b.dataset.action==='undo'){const u=undoStack.get(article),r=redoStack.get(article);if(u.length){r.push(article.innerHTML);article.innerHTML=u.pop();toolbarReset(article);await reload(article);}return;}
-  if(b.dataset.action==='redo'){const u=undoStack.get(article),r=redoStack.get(article);if(r.length){u.push(article.innerHTML);article.innerHTML=r.pop();toolbarReset(article);await reload(article);}return;}
+  if(b.dataset.action==='undo'){await undo(article);return;}
+  if(b.dataset.action==='redo'){await redo(article);return;}
  });
  article.addEventListener('click',async e=>{
   const mark=e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
@@ -89,9 +92,10 @@ function toolbar(article){
  });
  load(article);
 }
-function toolbarReset(article){article.querySelectorAll('.lsa-tools,.lsa-help').forEach(x=>x.remove());loaded.delete(article);article.dataset.lsaReady='';toolbar(article);}
+
 async function remove(article,id,el){
- try{await request('DELETE',{id});el.remove();status(article,'Sincronizado');}
+ const a=loaded.get(article)?.find(x=>x.id===id);
+ try{await request('DELETE',{id});if(a)record(article,a);el.replaceWith(...el.childNodes);status(article,'Sincronizado');}
  catch(e){alert('Não foi possível apagar: '+e.message);}
 }
 function findAndWrap(article,a){
@@ -111,7 +115,7 @@ async function load(article){
   status(article,'Sincronizado');
  }catch(e){status(article,'Sem sincronização');console.warn('[QuestIA anotações]',e);}
 }
-async function reload(article){loaded.delete(article);const old=article.dataset.lsaReady;article.dataset.lsaReady='';const bar=article.querySelector('.lsa-tools');if(bar)bar.remove();toolbar(article);}
+
 function scan(root){
  styles();
  (root.matches?.('.ls-artigo')?[root]:[]).concat([...root.querySelectorAll?.('.ls-artigo')||[]]).forEach(toolbar);
