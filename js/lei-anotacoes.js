@@ -89,7 +89,7 @@ function toolbar(article){
  });
  load(article);
 }
-function toolbarReset(article){article.dataset.lsaReady='';toolbar(article);}
+function toolbarReset(article){article.querySelectorAll('.lsa-tools,.lsa-help').forEach(x=>x.remove());loaded.delete(article);article.dataset.lsaReady='';toolbar(article);}
 async function remove(article,id,el){
  try{await request('DELETE',{id});el.remove();status(article,'Sincronizado');}
  catch(e){alert('Não foi possível apagar: '+e.message);}
