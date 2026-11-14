@@ -18,9 +18,16 @@ async function preparar(db){
     kind TEXT NOT NULL,
     color TEXT NOT NULL DEFAULT 'yellow',
     note TEXT NOT NULL DEFAULT '',
+    x REAL NOT NULL DEFAULT 24,
+    y REAL NOT NULL DEFAULT 70,
+    width REAL NOT NULL DEFAULT 260,
+    height REAL NOT NULL DEFAULT 145,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`).run();
+  for(const col of ['x REAL NOT NULL DEFAULT 24','y REAL NOT NULL DEFAULT 70','width REAL NOT NULL DEFAULT 260','height REAL NOT NULL DEFAULT 145']){
+    try{await db.prepare('ALTER TABLE lei_anotacoes ADD COLUMN '+col).run();}catch(e){if(!String(e.message||e).toLowerCase().includes('duplicate column'))throw e;}
+  }
   await db.prepare('CREATE INDEX IF NOT EXISTS idx_lei_anotacoes_doc ON lei_anotacoes(doc_key, updated_at)').run();
 }
 
@@ -32,7 +39,7 @@ export async function onRequest({request,env}){
     if(request.method==='GET'){
       const doc=clean(new URL(request.url).searchParams.get('doc'),240);
       if(!doc)return json(400,{error:'Documento não informado.'});
-      const r=await env.DB.prepare('SELECT id,doc_key,quote,prefix,suffix,kind,color,note,created_at,updated_at FROM lei_anotacoes WHERE doc_key=? ORDER BY created_at').bind(doc).all();
+      const r=await env.DB.prepare('SELECT id,doc_key,quote,prefix,suffix,kind,color,note,x,y,width,height,created_at,updated_at FROM lei_anotacoes WHERE doc_key=? ORDER BY created_at').bind(doc).all();
       return json(200,{annotations:r.results||[]});
     }
     if(request.method==='POST'){
@@ -43,13 +50,14 @@ export async function onRequest({request,env}){
       const kind=['highlight','underline','note'].includes(x.kind)?x.kind:'';
       const color=['yellow','green','blue','pink','purple'].includes(x.color)?x.color:'yellow';
       const note=clean(x.note,4000),prefix=clean(x.prefix,100),suffix=clean(x.suffix,100);
+      const px=Number.isFinite(Number(x.x))?Math.max(0,Math.min(100000,Number(x.x))):24,py=Number.isFinite(Number(x.y))?Math.max(0,Math.min(100000,Number(x.y))):70,pw=Number.isFinite(Number(x.width))?Math.max(170,Math.min(700,Number(x.width))):260,ph=Number.isFinite(Number(x.height))?Math.max(90,Math.min(700,Number(x.height))):145;
       if(!id||!doc||!quote||!kind)return json(400,{error:'Campos obrigatórios ausentes.'});
       const now=new Date().toISOString();
-      await env.DB.prepare(`INSERT INTO lei_anotacoes(id,doc_key,quote,prefix,suffix,kind,color,note,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?)
+      await env.DB.prepare(`INSERT INTO lei_anotacoes(id,doc_key,quote,prefix,suffix,kind,color,note,x,y,width,height,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(id) DO UPDATE SET doc_key=excluded.doc_key,quote=excluded.quote,prefix=excluded.prefix,
-        suffix=excluded.suffix,kind=excluded.kind,color=excluded.color,note=excluded.note,updated_at=excluded.updated_at`)
-        .bind(id,doc,quote,prefix,suffix,kind,color,note,now,now).run();
+        suffix=excluded.suffix,kind=excluded.kind,color=excluded.color,note=excluded.note,x=excluded.x,y=excluded.y,width=excluded.width,height=excluded.height,updated_at=excluded.updated_at`)
+        .bind(id,doc,quote,prefix,suffix,kind,color,note,px,py,pw,ph,now,now).run();
       return json(200,{ok:true,id,updated_at:now});
     }
     const raw=await request.text();
