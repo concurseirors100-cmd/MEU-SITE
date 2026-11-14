@@ -17,7 +17,12 @@ const css=`
 .lsa-mark[data-color="yellow"]{background:#fff1a8}.lsa-mark[data-color="green"]{background:#c9f2d0}
 .lsa-mark[data-color="blue"]{background:#cce5ff}.lsa-mark[data-color="pink"]{background:#ffd6e7}.lsa-mark[data-color="purple"]{background:#e7d7ff}
 .lsa-help{font-size:11px;color:var(--muted);margin:0 0 8px}
-.lsa-note-visible{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin:0 3px;border:1px solid #b9a4e8;border-radius:50%;background:#f1ebff;color:#60449a;font:14px system-ui;vertical-align:middle;cursor:pointer}
+.lsa-note-visible{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin:0 3px;border:1px solid #b9a4e8;border-radius:50%;background:#f1ebff;color:#60449a;font:13px system-ui;vertical-align:middle;cursor:pointer}
+.lsa-note-box{position:absolute;z-index:20;box-sizing:border-box;min-width:170px;min-height:90px;width:260px;height:145px;resize:both;overflow:auto;border:1px solid #b9a4e8;border-radius:7px;background:#fff9df;color:#302b20;box-shadow:0 3px 12px #0002;font:13px/1.45 system-ui}
+.lsa-note-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 8px;background:#f3e6b8;color:#49376e;font-size:11px;font-weight:700;cursor:move;user-select:none;touch-action:none}
+.lsa-note-head button{border:0;background:transparent;color:#49376e;cursor:pointer;font-size:15px}
+.lsa-note-body{min-height:45px;padding:8px;outline:none;white-space:pre-wrap;overflow-wrap:anywhere}
+.lsa-note-box.lsa-saving{opacity:.72}.lsa-note-box.lsa-error{border-color:#c33}
 .lsa-note-pop{position:fixed;z-index:99999;width:min(360px,calc(100vw - 28px));padding:12px;border:1px solid #c9b9e8;border-radius:10px;background:#fff;color:#222;box-shadow:0 8px 28px #0003;font:13px system-ui}
 .lsa-note-pop strong{display:block;margin-bottom:8px}
 .lsa-note-pop textarea{box-sizing:border-box;width:100%;min-height:110px;resize:vertical;padding:9px;border:1px solid #ccc;border-radius:7px;font:13px/1.45 system-ui;color:#222;background:#fff}
@@ -45,7 +50,31 @@ function stack(el){if(!undoStack.has(el))undoStack.set(el,[]);if(!redoStack.has(
 function record(el,a){stack(el);undoStack.get(el).push(a);if(undoStack.get(el).length>100)undoStack.get(el).shift();redoStack.get(el).length=0;}
 function findAnnotation(el,id){return el.querySelector('[data-annotation="'+CSS.escape(id)+'"]');}
 function findNote(el,id){return el.querySelector('[data-note-for="'+CSS.escape(id)+'"]');}
-function showNote(mark,a){if(!a.note)return;const box=document.createElement('button');box.type='button';box.className='lsa-note-visible';box.dataset.noteFor=a.id;box.textContent='💬';box.title='Abrir comentário';mark.after(box);}
+function showNote(mark,a){
+ if(!a.note)return;const article=mark.closest('.ls-artigo');if(!article)return;
+ if(getComputedStyle(article).position==='static')article.style.position='relative';
+ if(findNote(article,a.id))return;
+ const pin=document.createElement('button');pin.type='button';pin.className='lsa-note-visible';pin.dataset.noteFor=a.id;pin.textContent='💬';pin.title='Localizar comentário';mark.after(pin);
+ const box=document.createElement('div');box.className='lsa-note-box';box.dataset.noteBox=a.id;
+ box.style.left=(Number.isFinite(Number(a.x))?a.x:24)+'px';box.style.top=(Number.isFinite(Number(a.y))?a.y:70)+'px';
+ box.style.width=Math.max(170,Math.min(700,Number(a.width)||260))+'px';box.style.height=Math.max(90,Math.min(700,Number(a.height)||145))+'px';
+ const head=document.createElement('div');head.className='lsa-note-head';head.innerHTML='<span>MEU COMENTÁRIO · arraste para mover</span>';
+ const del=document.createElement('button');del.type='button';del.textContent='×';del.title='Excluir comentário';head.append(del);
+ const body=document.createElement('div');body.className='lsa-note-body';body.contentEditable='true';body.spellcheck=true;body.textContent=a.note;
+ box.append(head,body);article.append(box);
+ let timer;
+ const persist=async()=>{const next={...a,note:body.innerText.trim(),x:Math.round(box.offsetLeft),y:Math.round(box.offsetTop),width:Math.round(box.getBoundingClientRect().width),height:Math.round(box.getBoundingClientRect().height)};
+  box.classList.add('lsa-saving');try{await request('POST',next);Object.assign(a,next);const list=loaded.get(article)||[];const i=list.findIndex(v=>v.id===a.id);if(i>=0)list[i]=next;else list.push(next);loaded.set(article,list);box.classList.remove('lsa-error');status(article,'Comentário sincronizado');}
+  catch(e){box.classList.add('lsa-error');status(article,'Falha ao sincronizar comentário');console.error(e);}finally{box.classList.remove('lsa-saving');}};
+ body.addEventListener('blur',persist);body.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(persist,700);});
+ const ro=new ResizeObserver(()=>{clearTimeout(timer);timer=setTimeout(persist,500);});ro.observe(box);
+ del.onclick=async()=>{if(confirm('Excluir este comentário?'))await remove(article,a.id,mark);};
+ head.addEventListener('pointerdown',e=>{if(e.target===del)return;e.preventDefault();head.setPointerCapture(e.pointerId);const sx=e.clientX,sy=e.clientY,l=box.offsetLeft,t=box.offsetTop;
+  const move=ev=>{box.style.left=Math.max(0,l+ev.clientX-sx)+'px';box.style.top=Math.max(0,t+ev.clientY-sy)+'px';};
+  const up=()=>{head.removeEventListener('pointermove',move);head.removeEventListener('pointerup',up);persist();};
+  head.addEventListener('pointermove',move);head.addEventListener('pointerup',up,{once:true});});
+ pin.onclick=()=>{box.scrollIntoView({block:'nearest',behavior:'smooth'});body.focus();};
+}
 function closeNoteEditor(article){document.querySelector('.lsa-note-pop')?.remove();}
 function openNoteEditor(article,{annotation=null,range=null}={}){
  closeNoteEditor(article);
@@ -98,7 +127,7 @@ async function addMark(article,kind,color,note,providedRange=null){
  const range=sel.range.cloneRange();
  const node=range.startContainer.nodeType===3?range.startContainer:null;
  const ctx=node?textContext(node,range.startOffset,range.endOffset):{prefix:'',suffix:''};
- const a={id:makeId(),doc_key:article.dataset.lsaDoc,quote:sel.quote,prefix:ctx.prefix,suffix:ctx.suffix,kind,color,note:note||''};
+ const a={id:makeId(),doc_key:article.dataset.lsaDoc,quote:sel.quote,prefix:ctx.prefix,suffix:ctx.suffix,kind,color,note:note||'',x:24,y:70,width:260,height:145};
  if(!wrapRange(article,range,a)){alert('Não foi possível marcar essa seleção. Tente selecionar um trecho menor, dentro do mesmo parágrafo.');return;}
  getSelection()?.removeAllRanges();
  record(article,a);
@@ -140,10 +169,10 @@ function toolbar(article){
  article.addEventListener('mouseleave',()=>setTool(null));
  article.addEventListener('click',async e=>{
   const visibleNote=e.target.closest('.lsa-note-visible');
-  if(visibleNote&&article.contains(visibleNote)){const id=visibleNote.dataset.noteFor;const a=loaded.get(article)?.find(x=>x.id===id);if(a)openNoteEditor(article,{annotation:a});return;}
+  if(visibleNote&&article.contains(visibleNote)){const box=article.querySelector('[data-note-box="'+CSS.escape(visibleNote.dataset.noteFor)+'"]');box?.scrollIntoView({block:'nearest',behavior:'smooth'});return;}
   const mark=e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
   const id=mark.dataset.annotation;
-  if(mark.dataset.kind==='note'){const a=loaded.get(article)?.find(x=>x.id===id);if(a)openNoteEditor(article,{annotation:a});return;}
+  if(mark.dataset.kind==='note'){article.querySelector('[data-note-box="'+CSS.escape(id)+'"] .lsa-note-body')?.focus();return;}
   if(confirm('Apagar esta marcação?'))await remove(article,id,mark);
  });
  load(article);
@@ -151,7 +180,7 @@ function toolbar(article){
 
 async function remove(article,id,el){
  const a=loaded.get(article)?.find(x=>x.id===id);
- try{await request('DELETE',{id});if(a)record(article,a);findNote(article,id)?.remove();el.replaceWith(...el.childNodes);status(article,'Sincronizado');}
+ try{await request('DELETE',{id});if(a)record(article,a);findNote(article,id)?.remove();article.querySelector('[data-note-box="'+CSS.escape(id)+'"]')?.remove();el.replaceWith(...el.childNodes);status(article,'Sincronizado');}
  catch(e){alert('Não foi possível apagar: '+e.message);}
 }
 function findAndWrap(article,a){
