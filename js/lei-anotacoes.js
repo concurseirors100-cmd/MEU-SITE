@@ -3,11 +3,12 @@
 'use strict';
 const API='/api/lei-anotacoes';
 const COLORS={yellow:'#fff1a8',green:'#c9f2d0',blue:'#cce5ff',pink:'#ffd6e7',purple:'#e7d7ff'};
-const undoStack=new WeakMap(),redoStack=new WeakMap(),loaded=new WeakMap();
+const undoStack=new WeakMap(),redoStack=new WeakMap(),loaded=new WeakMap(),activeTool=new WeakMap();
 const css=`
 .lsa-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;margin:0 0 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font:12px system-ui}
 .lsa-tools button{border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--ink);padding:5px 8px;cursor:pointer}
 .lsa-tools button:disabled{opacity:.4;cursor:default}
+.lsa-tools button.lsa-active{outline:2px solid var(--accent);outline-offset:1px;background:var(--surface)}
 .lsa-tools .lsa-color{width:22px;height:22px;padding:0;border:1px solid #999}
 .lsa-status{margin-left:auto;color:var(--muted);font-size:11px}
 .lsa-mark{border-radius:2px;cursor:pointer}
@@ -76,14 +77,31 @@ function toolbar(article){
  '<button data-action="underline">Sublinhar</button><button data-action="note">💬 Comentário</button><button data-action="undo">↶ Desfazer</button><button data-action="redo">↷ Refazer</button><span class="lsa-status">Carregando…</span>';
  article.prepend(bar);
  const help=document.createElement('div');help.className='lsa-help';help.textContent='Selecione um trecho e escolha uma ferramenta. As marcações são sincronizadas entre dispositivos.';bar.after(help);
+ function setTool(tool){
+  activeTool.set(article,tool);
+  bar.querySelectorAll('[data-color],[data-action="underline"]').forEach(x=>x.classList.toggle('lsa-active',!!tool&&((x.dataset.color&&tool.kind==='highlight'&&x.dataset.color===tool.color)||(x.dataset.action==='underline'&&tool.kind==='underline'))));
+  status(article,tool?'Ferramenta ativa — selecione o texto':'Selecione uma ferramenta');
+ }
  bar.addEventListener('click',async e=>{
   const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.color)return addMark(article,'highlight',b.dataset.color,'');
-  if(b.dataset.action==='underline')return addMark(article,'underline','yellow','');
-  if(b.dataset.action==='note'){const n=prompt('Comentário sobre o trecho selecionado:');if(n!==null&&n.trim())return addMark(article,'note','purple',n.trim());return;}
-  if(b.dataset.action==='undo'){await undo(article);return;}
-  if(b.dataset.action==='redo'){await redo(article);return;}
+  if(b.dataset.color){const next={kind:'highlight',color:b.dataset.color};const cur=activeTool.get(article);setTool(cur?.kind===next.kind&&cur.color===next.color?null:next);return;}
+  if(b.dataset.action==='underline'){const cur=activeTool.get(article);setTool(cur?.kind==='underline'?null:{kind:'underline',color:'yellow'});return;}
+  if(b.dataset.action==='note'){setTool(null);const n=prompt('Comentário sobre o trecho selecionado:');if(n!==null&&n.trim())return addMark(article,'note','purple',n.trim());return;}
+  if(b.dataset.action==='undo'){setTool(null);await undo(article);return;}
+  if(b.dataset.action==='redo'){setTool(null);await redo(article);return;}
  });
+ let applyPending=false;
+ const applyActive=()=>{
+  if(applyPending)return;applyPending=true;
+  setTimeout(async()=>{
+   applyPending=false;const tool=activeTool.get(article);if(!tool)return;
+   const sel=selectedRange(article);if(!sel)return;
+   await addMark(article,tool.kind,tool.color,'');
+  },0);
+ };
+ article.addEventListener('mouseup',applyActive);
+ article.addEventListener('touchend',applyActive);
+ article.addEventListener('mouseleave',()=>setTool(null));
  article.addEventListener('click',async e=>{
   const mark=e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
   const id=mark.dataset.annotation;
