@@ -62,13 +62,17 @@ export async function onRequest({ request, env }) {
     body: JSON.stringify(corpo),
   });
 
-  if (resposta.status === 401) {
-    const digital = `tem ${chave.length} caracteres, ${chave.startsWith('sk-ant-') ? 'começa com sk-ant-' : 'NÃO começa com sk-ant-'} e termina em "…${chave.slice(-4)}"`;
-    return json(502, `A Anthropic recusou a chave guardada no Cloudflare Pages (ANTHROPIC_API_KEY). A chave que o servidor está usando ${digital}. Compare com a lista de chaves no console da Anthropic.`);
+  let texto;
+  try {
+    texto = await resposta.text();
+  } catch {
+    return json(502, 'Não foi possível ler a resposta da API da Anthropic.');
   }
 
-  return new Response(await resposta.text(), {
+  // Nunca devolver detalhes da chave armazenada no servidor ao navegador.
+  // Mantém status e corpo originais para o frontend tratar erros da Anthropic.
+  return new Response(texto, {
     status: resposta.status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': resposta.headers.get('Content-Type') || 'application/json' },
   });
 }
