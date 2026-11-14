@@ -1,12 +1,19 @@
 // Cloudflare Pages Function: anotações compartilhadas da Lei Seca.
 // O conteúdo oficial da legislação nunca é gravado nem alterado por esta API.
-// Acesso público, sem autenticação individual, conforme opção definida para o QuestIA.
+// 14/11: passa a exigir a senha do servidor (QUESTIA_SENHA, a mesma da IA) no cabeçalho
+// x-questia-senha. Antes qualquer pessoa com o endereço podia ler, alterar ou apagar.
 
 const json=(status,data)=>new Response(JSON.stringify(data),{
   status,headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}
 });
 const MAX_BODY=20000;
 const clean=(v,n)=>String(v??'').slice(0,n);
+function senhaConfere(recebida,esperada){
+  const a=new TextEncoder().encode(recebida||''),b=new TextEncoder().encode(esperada);
+  let dif=a.length^b.length;
+  for(let i=0;i<b.length;i++)dif|=(a[i]??0)^b[i];
+  return dif===0;
+}
 
 async function preparar(db){
   await db.prepare(`CREATE TABLE IF NOT EXISTS lei_anotacoes (
@@ -35,12 +42,20 @@ async function preparar(db){
 export async function onRequest({request,env}){
   if(!env.DB)return json(503,{error:'Banco D1 (binding DB) indisponível.'});
   if(!['GET','POST','DELETE'].includes(request.method))return json(405,{error:'Método não permitido.'});
+  const senha=(env.QUESTIA_SENHA||'').trim();
+  if(!senha)return json(503,{error:'Servidor sem QUESTIA_SENHA configurada.'});
+  if(!senhaConfere((request.headers.get('x-questia-senha')||'').trim(),senha))return json(401,{error:'Senha do servidor ausente ou incorreta.'});
   try{
     await preparar(env.DB);
     if(request.method==='GET'){
       const doc=clean(new URL(request.url).searchParams.get('doc'),240);
       if(!doc)return json(400,{error:'Documento não informado.'});
-      const r=await env.DB.prepare('SELECT id,doc_key,quote,prefix,suffix,kind,color,note,x,y,width,height,font_size,created_at,updated_at FROM lei_anotacoes WHERE doc_key=? ORDER BY created_at').bind(doc).all();
+      // antigas=1: inclui as gravadas com a chave antiga do card de assunto ("<doc> · citado em N questões")
+      const antigas=new URL(request.url).searchParams.get('antigas')==='1';
+      const esc=doc.replace(/[\\%_]/g,m=>'\\'+m);
+      const r=antigas
+        ?await env.DB.prepare("SELECT id,doc_key,quote,prefix,suffix,kind,color,note,x,y,width,height,font_size,created_at,updated_at FROM lei_anotacoes WHERE doc_key=? OR doc_key LIKE ? ESCAPE '\\' ORDER BY created_at").bind(doc,esc+' · citado em %').all()
+        :await env.DB.prepare('SELECT id,doc_key,quote,prefix,suffix,kind,color,note,x,y,width,height,font_size,created_at,updated_at FROM lei_anotacoes WHERE doc_key=? ORDER BY created_at').bind(doc).all();
       return json(200,{annotations:r.results||[]});
     }
     if(request.method==='POST'){

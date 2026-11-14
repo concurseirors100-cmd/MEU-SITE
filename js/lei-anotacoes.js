@@ -10,7 +10,7 @@ const css=`
 .lsa-tools button:disabled{opacity:.4;cursor:default}
 .lsa-tools button.lsa-active{outline:2px solid var(--accent);outline-offset:1px;background:var(--surface)}
 .lsa-tools .lsa-color{width:22px;height:22px;padding:0;border:1px solid #999}
-.lsa-status{margin-left:auto;color:var(--muted);font-size:11px}
+.lsa-status{flex:1 0 100%;order:9;min-height:15px;line-height:15px;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lsa-mark{border-radius:2px;cursor:pointer}
 .lsa-mark[data-kind="underline"]{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px;background:transparent}
 .lsa-mark[data-kind="note"]{border-bottom:2px dotted var(--accent2);background:rgba(99,102,241,.08)}
@@ -23,17 +23,23 @@ const css=`
 .lsa-note-head button{border:0;background:transparent;color:#49376e;cursor:pointer;font-size:15px}
 .lsa-note-body{min-height:45px;padding:8px;outline:none;white-space:pre-wrap;overflow-wrap:anywhere}
 .lsa-note-box.lsa-saving{opacity:.72}.lsa-note-box.lsa-error{border-color:#c33}
-.lsa-typewriter{position:absolute;z-index:25;min-width:24px;min-height:22px;max-width:95%;width:max-content;box-sizing:border-box;color:#0645d8;background:transparent;font:16px/1.35 Arial,sans-serif;white-space:pre-wrap;overflow-wrap:anywhere;outline:none;border:1px dashed transparent;padding:1px 3px}
-.lsa-typewriter:focus{border-color:#9bb7ff;background:#fff}
-.lsa-typewriter-tools{position:absolute;left:0;top:-29px;display:flex;gap:3px;opacity:0;visibility:hidden;pointer-events:none;z-index:2;transition:opacity .12s ease}
-.lsa-typewriter.lsa-selected .lsa-typewriter-tools{opacity:1;visibility:visible;pointer-events:auto}
-.lsa-typewriter.lsa-selected{z-index:40;border:1px dashed #9bb7ff;background:#fff}
-.lsa-typewriter [contenteditable=true]{min-width:20px;min-height:20px;outline:none;cursor:text}
-.lsa-typewriter-tools button{min-width:24px;min-height:24px;box-shadow:0 1px 3px #0002}
-
-.lsa-typewriter-tools button{border:1px solid #aaa;border-radius:3px;background:#fff;color:#333;padding:1px 5px;font:13px Arial;cursor:pointer}
-.lsa-typewriter-move{cursor:move;touch-action:none}
-
+.lsa-typewriter{position:absolute;z-index:25;box-sizing:border-box;min-width:28px;width:max-content;padding:2px 4px;border:1px solid transparent;border-radius:3px;color:#0645d8;background:transparent;font-family:Arial,Helvetica,sans-serif;line-height:1.35;white-space:pre-wrap;overflow-wrap:anywhere;cursor:text}
+.lsa-typewriter>.lsa-tw-text{outline:none;min-height:1.35em;min-width:12px;caret-color:#0645d8}
+.lsa-typewriter>.lsa-tw-text:empty::before{content:'Digite…';color:#7d9ae6;pointer-events:none}
+.lsa-typewriter:hover{border-color:#c6d4fb}
+.lsa-typewriter.lsa-selected{z-index:40;border:1px dashed #5b82f0;background:rgba(255,255,255,.92)}
+.lsa-typewriter.lsa-dragging{opacity:.85;box-shadow:0 4px 14px #0645d833}
+.lsa-typewriter.lsa-error{border-color:#c33}
+.lsa-tw-bar{position:absolute;z-index:60;display:none;align-items:stretch;gap:0;height:32px;border:1px solid #5b82f0;border-radius:7px;background:#fff;box-shadow:0 3px 10px #0645d833;font:13px/1 Arial,Helvetica,sans-serif;color:#1d3f9e;white-space:nowrap;user-select:none;-webkit-user-select:none}
+.lsa-tw-bar.lsa-on{display:flex}
+.lsa-tw-bar>*{display:flex;align-items:center;justify-content:center;min-width:34px;padding:0 8px;border:0;border-right:1px solid #dbe4fd;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.lsa-tw-bar>*:last-child{border-right:0}
+.lsa-tw-bar .lsa-tw-move{cursor:grab;touch-action:none;font-weight:700;gap:5px;background:#eef3ff;border-radius:6px 0 0 6px}
+.lsa-tw-bar .lsa-tw-move:active{cursor:grabbing}
+.lsa-tw-bar .lsa-tw-del{color:#a22}
+.lsa-tw-bar .lsa-tw-tam{min-width:30px;color:#667;cursor:default;font-size:12px}
+.lsa-article-tw-mode{cursor:text}
+.lsa-article-tw-mode .ls-l{cursor:text}
 .lsa-note-pop{position:fixed;z-index:99999;width:min(360px,calc(100vw - 28px));padding:12px;border:1px solid #c9b9e8;border-radius:10px;background:#fff;color:#222;box-shadow:0 8px 28px #0003;font:13px system-ui}
 .lsa-note-pop strong{display:block;margin-bottom:8px}
 .lsa-note-pop textarea{box-sizing:border-box;width:100%;min-height:110px;resize:vertical;padding:9px;border:1px solid #ccc;border-radius:7px;font:13px/1.45 system-ui;color:#222;background:#fff}
@@ -43,20 +49,27 @@ const css=`
 .lsa-note-pop .lsa-note-delete{margin-right:auto;color:#a22}
 `;
 function styles(){if(document.getElementById('lsa-style'))return;const s=document.createElement('style');s.id='lsa-style';s.textContent=css;document.head.appendChild(s);}
+// 14/11: no card de assunto o título é "CF/88, art. 150 · citado em 4 questões".
+// A contagem mudava a chave e as anotações sumiam. Agora vale só o texto do título,
+// sem a contagem: o mesmo artigo tem a mesma chave no card próprio e no de assunto.
+function tituloSemContagem(sm){if(!sm)return'';return [...sm.childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join('').replace(/\s*·\s*citado em.*$/i,'').trim();}
 function docKey(el){
- const fonte=el.querySelector('.ls-fonte')?.textContent||el.closest('details.ls-outra')?.querySelector(':scope>summary')?.textContent||'';
+ const fonte=el.querySelector('.ls-fonte')?.textContent||tituloSemContagem(el.closest('details.ls-outra')?.querySelector(':scope>summary'));
  const card=el.closest('details.ls-card')?.dataset.k||'';
  let s=fonte.replace(/^Ver também:\s*/i,'').trim();
  if(!s){const m=card.match(/^(.*),\s*art\.\s*(\S+)$/);s=m?m[1]+', art. '+m[2]:card;}
  if(!s||s.startsWith('ass:'))s=card+'|'+(el.textContent||'').slice(0,80);
  return s.slice(0,240);
 }
+// 14/11: a API passou a exigir a senha do servidor (a mesma da IA, gravada no painel 🔑).
+function senhaServidor(){try{return localStorage.getItem('questia_senha_servidor')||'';}catch(e){return'';}}
 async function request(method,data,url){
- const r=await fetch(url||API,{method,headers:{'Content-Type':'application/json'},body:data?JSON.stringify(data):undefined,cache:'no-store'});
+ const r=await fetch(url||API,{method,headers:{'Content-Type':'application/json','x-questia-senha':senhaServidor()},body:data?JSON.stringify(data):undefined,cache:'no-store'});
  const j=await r.json().catch(()=>({}));
- if(!r.ok)throw new Error(j.error||'Erro ao sincronizar.');
+ if(!r.ok){const e=new Error(j.error||'Erro ao sincronizar.');e.status=r.status;throw e;}
  return j;
 }
+function falhaMsg(e,padrao){return e&&e.status===401?'Sem sincronização: informe a senha do servidor no painel 🔑 do topo':padrao;}
 function stack(el){if(!undoStack.has(el))undoStack.set(el,[]);if(!redoStack.has(el))redoStack.set(el,[]);}
 function record(el,a){stack(el);undoStack.get(el).push(a);if(undoStack.get(el).length>100)undoStack.get(el).shift();redoStack.get(el).length=0;}
 function findAnnotation(el,id){return el.querySelector('[data-annotation="'+CSS.escape(id)+'"]');}
@@ -127,22 +140,180 @@ async function createFreeNote(article,x,y){
  try{await request('POST',a);const list=loaded.get(article)||[];list.push(a);loaded.set(article,list);renderFreeNote(article,a);status(article,'Caixa criada e sincronizada');}
  catch(e){alert('Não foi possível criar a caixa: '+e.message);status(article,'Falha ao criar caixa');}
 }
-function renderTypewriter(article,a){
+// ===== Caixa de texto livre (estilo editor de PDF) — reescrita em 14/11 =====
+// Causas corrigidas:
+//  1) A posição era gravada em pixels a partir do canto do artigo. No celular o texto
+//     quebra em outras linhas e a caixa caía em outro lugar. Agora a caixa fica presa
+//     ao parágrafo (linha .ls-l) em que foi criada: grava-se qual parágrafo, um trecho
+//     do começo dele (para achá-lo de novo) e a posição: horizontal em fração da
+//     largura do texto; vertical em fração da altura do parágrafo quando o clique é
+//     dentro dele, ou em distância fixa da borda quando é acima ou abaixo dele.
+//  2) O clique virava o canto da caixa e o texto nascia abaixo e à direita. Agora o
+//     ponto gravado é o do cursor: o meio da primeira linha de texto fica no clique.
+//  3) Cada caixa tinha a sua barra de controles, presa acima dela. Agora há UMA barra
+//     por artigo, que se encaixa acima (ou abaixo, sem espaço) da caixa selecionada.
+// Formato no D1 (sem mudar o banco): prefix='tw2|<parágrafo>|<começo do parágrafo>',
+// x = fração horizontal × 10000, y = (fração vertical + 5) × 1000. Caixas antigas
+// (sem 'tw2|') aparecem onde estavam e passam ao formato novo quando forem movidas.
+const TW_BORDA=1,TW_PAD_X=4,TW_PAD_Y=2,TW_LH=1.35,TW_FONTE=16;
+const twBar=new WeakMap(),twSel=new WeakMap();
+const twLinhas=article=>[...article.querySelectorAll(':scope>.ls-l')];
+const twNorm=t=>String(t||'').replace(/\s+/g,' ').trim().slice(0,40);
+// Topo de um elemento em relação à caixa de preenchimento do artigo (a mesma base de
+// left/top dos filhos absolutos). Não usa offsetTop: ele depende de qual ancestral é a
+// referência, e no 1º clique o artigo ainda não era — daí a caixa nascer deslocada.
+function twTopo(article,el){return el.getBoundingClientRect().top-article.getBoundingClientRect().top-article.clientTop;}
+function twMetrica(article){
+ const cs=getComputedStyle(article);
+ const pl=parseFloat(cs.paddingLeft)||0,pr=parseFloat(cs.paddingRight)||0;
+ return{esq:pl,larg:Math.max(40,article.clientWidth-pl-pr),dir:article.clientWidth-pr};
+}
+// Converte um ponto (em px, relativo ao artigo) para âncora e de volta.
+function twAncorar(article,px,py){
+ const L=twLinhas(article);const m=twMetrica(article);
+ const tops=L.map(l=>twTopo(article,l));
+ let i=0;for(let k=0;k<L.length;k++){if(tops[k]<=py)i=k;else break;}
+ const l=L[i];const fx=Math.max(0,Math.min(1,(px-m.esq)/m.larg));
+ // dentro do parágrafo: proporção da altura (0 a 1). Fora dele: distância em px/100
+ // a partir da borda (acima: negativo; abaixo: 1 + px/100), que não muda com a largura.
+ let fy=0;
+ if(l){const t=tops[i],h=Math.max(1,l.getBoundingClientRect().height);
+  fy=py<t?(py-t)/100:py<=t+h?(py-t)/h:1+(py-t-h)/100;}
+ fy=Math.max(-5,Math.min(95,fy));
+ return{i,fp:l?twNorm(l.textContent):'',fx,fy};
+}
+function twPonto(article,an){
+ const L=twLinhas(article);const m=twMetrica(article);
+ let l=L[an.i];
+ if(an.fp&&(!l||twNorm(l.textContent)!==an.fp)){const k=L.findIndex(x=>twNorm(x.textContent)===an.fp);if(k>=0)l=L[k];}
+ if(!l)l=L[Math.min(an.i,L.length-1)];
+ const top=l?twTopo(article,l):0,alt=l?l.getBoundingClientRect().height:0;
+ const fy=an.fy;
+ return{x:m.esq+an.fx*m.larg,y:fy<0?top+fy*100:fy<=1?top+fy*alt:top+alt+(fy-1)*100};
+}
+function twLerAncora(a){
+ const m=/^tw2\|(\d+)\|(.*)$/.exec(a.prefix||'');
+ if(!m)return null;
+ return{i:+m[1],fp:m[2],fx:(Number(a.x)||0)/10000,fy:(Number(a.y)||5000)/1000-5};
+}
+function twGravarAncora(a,an){a.prefix=('tw2|'+an.i+'|'+an.fp).slice(0,100);a.x=Math.round(an.fx*10000);a.y=Math.round((an.fy+5)*1000);}
+function twFonte(box){return parseInt(box.style.fontSize,10)||TW_FONTE;}
+// Coloca a caixa de modo que o cursor (meio da 1ª linha) fique no ponto da âncora.
+function twPosicionar(article,box,a){
+ const fs=twFonte(box),m=twMetrica(article);
+ let cx,cy;
+ const an=twLerAncora(a);
+ if(an){const p=twPonto(article,an);cx=p.x;cy=p.y;}
+ else{cx=(Number(a.x)||0)+TW_BORDA+TW_PAD_X;cy=(Number(a.y)||0)+TW_BORDA+TW_PAD_Y+fs*TW_LH/2;} // caixa antiga
+ const left=Math.round(cx-TW_BORDA-TW_PAD_X),top=Math.round(cy-TW_BORDA-TW_PAD_Y-fs*TW_LH/2);
+ box.style.left=left+'px';box.style.top=Math.max(0,top)+'px';
+ box.style.maxWidth=Math.max(80,Math.round(m.dir-left))+'px';   // cresce para a direita até a margem do texto
+ if(twSel.get(article)===box)twBarraPosicionar(article);
+}
+function twCursorDaCaixa(box){const fs=twFonte(box);return{x:box.offsetLeft+TW_BORDA+TW_PAD_X,y:box.offsetTop+TW_BORDA+TW_PAD_Y+fs*TW_LH/2};}
+// ---- a barra única do artigo ----
+function twBarra(article){
+ let bar=twBar.get(article);if(bar)return bar;
+ bar=document.createElement('div');bar.className='lsa-tw-bar';bar.setAttribute('contenteditable','false');
+ bar.innerHTML='<span class="lsa-tw-move" title="Arraste para mover">⠿ Mover</span><button type="button" data-tw="menos" title="Diminuir letra">A−</button><span class="lsa-tw-tam"></span><button type="button" data-tw="mais" title="Aumentar letra">A+</button><button type="button" data-tw="apagar" class="lsa-tw-del" title="Apagar este texto">🗑</button>';
+ article.append(bar);twBar.set(article,bar);
+ bar.addEventListener('pointerdown',e=>{if(!e.target.closest('.lsa-tw-move'))e.preventDefault();}); // não tira o foco do texto
+ bar.addEventListener('click',e=>{
+  const b=e.target.closest('[data-tw]');const box=twSel.get(article);if(!b||!box)return;
+  if(b.dataset.tw==='apagar'){box._twApagar();return;}
+  const fs=twFonte(box)+(b.dataset.tw==='mais'?2:-2);
+  box._twFonte(Math.max(8,Math.min(48,fs)));
+ });
+ const mv=bar.querySelector('.lsa-tw-move');
+ mv.addEventListener('pointerdown',e=>{
+  const box=twSel.get(article);if(!box)return;
+  e.preventDefault();mv.setPointerCapture(e.pointerId);
+  const sx=e.clientX,sy=e.clientY,l=box.offsetLeft,t=box.offsetTop,m=twMetrica(article);
+  box.classList.add('lsa-dragging');
+  const andar=ev=>{
+   const nl=Math.max(0,Math.min(article.clientWidth-30,l+ev.clientX-sx)),nt=Math.max(0,t+ev.clientY-sy);
+   box.style.left=nl+'px';box.style.top=nt+'px';box.style.maxWidth=Math.max(80,Math.round(m.dir-nl))+'px';
+   twBarraPosicionar(article);
+  };
+  const soltar=()=>{mv.removeEventListener('pointermove',andar);mv.removeEventListener('pointerup',soltar);mv.removeEventListener('pointercancel',soltar);
+   box.classList.remove('lsa-dragging');const c=twCursorDaCaixa(box);box._twMovida(c.x,c.y);};
+  mv.addEventListener('pointermove',andar);mv.addEventListener('pointerup',soltar);mv.addEventListener('pointercancel',soltar);
+ });
+ return bar;
+}
+function twBarraPosicionar(article){
+ const bar=twBar.get(article),box=twSel.get(article);if(!bar||!box)return;
+ bar.classList.add('lsa-on');
+ const h=bar.offsetHeight||32,w=bar.offsetWidth||200;
+ let top=box.offsetTop-h-6;if(top<0)top=box.offsetTop+box.offsetHeight+6;   // sem espaço acima: vai para baixo
+ let left=Math.min(box.offsetLeft,Math.max(0,article.clientWidth-w));
+ bar.style.top=top+'px';bar.style.left=Math.max(0,left)+'px';
+ bar.querySelector('.lsa-tw-tam').textContent=twFonte(box);
+}
+function twSelecionar(article,box){
+ const ant=twSel.get(article)||null;box=box||null;
+ if(ant===box){if(box)twBarraPosicionar(article);return;}
+ twSel.set(article,box);                       // troca antes de avisar a anterior (evita laço ao apagar caixa vazia)
+ const bar=twBarra(article);
+ if(box){box.classList.add('lsa-selected');twBarraPosicionar(article);}else bar.classList.remove('lsa-on');
+ if(ant){ant.classList.remove('lsa-selected');ant._twSaiu&&ant._twSaiu();}
+}
+function renderTypewriter(article,a,{novo=false}={}){
  if(article.querySelector('[data-typewriter="'+CSS.escape(a.id)+'"]'))return;
  article.style.setProperty('position','relative','important');
- const box=document.createElement('div');box.className='lsa-typewriter';box.style.position='absolute';box.dataset.typewriter=a.id;box.style.left=(Number(a.x)||0)+'px';box.style.top=(Number(a.y)||0)+'px';box.style.fontSize=Math.max(8,Math.min(48,Number(a.font_size)||16))+'px';
- const tools=document.createElement('div');tools.className='lsa-typewriter-tools';const move=document.createElement('button');move.type='button';move.className='lsa-typewriter-move';move.textContent='⠿';move.title='Arrastar texto';const plus=document.createElement('button');plus.type='button';plus.textContent='A+';const minus=document.createElement('button');minus.type='button';minus.textContent='A−';tools.append(move,plus,minus);
- const body=document.createElement('div');body.contentEditable='true';body.setAttribute('contenteditable','true');body.spellcheck=true;body.textContent=a.note||'';box.append(tools,body);article.append(box);let timer;
- const activate=()=>{article.querySelectorAll('.lsa-typewriter.lsa-selected').forEach(el=>el.classList.remove('lsa-selected'));box.classList.add('lsa-selected');};
- box.addEventListener('pointerdown',e=>{if(e.target.closest('.lsa-typewriter-tools'))return;activate();});
- body.addEventListener('focus',activate);
- const persist=async()=>{const next={...a,note:body.innerText,x:Math.round(box.offsetLeft),y:Math.round(box.offsetTop),font_size:parseInt(box.style.fontSize,10)||16};box.classList.add('lsa-saving');try{await request('POST',next);Object.assign(a,next);const list=loaded.get(article)||[];const i=list.findIndex(v=>v.id===a.id);if(i<0)list.push(next);else list[i]=next;loaded.set(article,list);status(article,'Texto sincronizado');}catch(e){box.classList.add('lsa-error');status(article,'Falha ao sincronizar texto');console.error(e);}finally{box.classList.remove('lsa-saving');}};
- body.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(persist,600);});body.addEventListener('blur',persist);
- plus.onclick=e=>{e.stopPropagation();box.style.fontSize=Math.min(48,(parseInt(box.style.fontSize,10)||16)+2)+'px';persist();body.focus();};minus.onclick=e=>{e.stopPropagation();box.style.fontSize=Math.max(8,(parseInt(box.style.fontSize,10)||16)-2)+'px';persist();body.focus();};
- move.addEventListener('pointerdown',e=>{activate();e.preventDefault();e.stopPropagation();move.setPointerCapture(e.pointerId);const sx=e.clientX,sy=e.clientY,l=box.offsetLeft,t=box.offsetTop;const mv=ev=>{box.style.left=Math.max(0,l+ev.clientX-sx)+'px';box.style.top=Math.max(0,t+ev.clientY-sy)+'px';};const up=()=>{move.removeEventListener('pointermove',mv);move.removeEventListener('pointerup',up);move.removeEventListener('pointercancel',up);persist();};move.addEventListener('pointermove',mv);move.addEventListener('pointerup',up,{once:true});move.addEventListener('pointercancel',up,{once:true});});
- if(!a.note)body.focus();
+ const box=document.createElement('div');box.className='lsa-typewriter';box.dataset.typewriter=a.id;
+ box.style.fontSize=Math.max(8,Math.min(48,Number(a.font_size)||TW_FONTE))+'px';
+ const txt=document.createElement('div');txt.className='lsa-tw-text';txt.contentEditable='true';txt.spellcheck=true;txt.textContent=a.note||'';
+ box.append(txt);article.append(box);box._twA=a;
+ let timer=null,salvo=!novo;
+ const lista=()=>loaded.get(article)||[];
+ const gravar=async()=>{
+  clearTimeout(timer);timer=null;
+  const texto=txt.innerText.replace(/\n$/,'');
+  if(!texto.trim())return;                          // caixa vazia não vai para o servidor
+  a.note=texto;a.font_size=twFonte(box);
+  try{await request('POST',a);salvo=true;box.classList.remove('lsa-error');
+   const L=lista();const i=L.findIndex(v=>v.id===a.id);if(i<0)L.push(a);loaded.set(article,L);status(article,'Texto sincronizado');}
+  catch(e){box.classList.add('lsa-error');status(article,falhaMsg(e,'Falha ao sincronizar texto'));console.error(e);}
+ };
+ const agendar=()=>{clearTimeout(timer);timer=setTimeout(gravar,600);};
+ box._twFonte=fs=>{box.style.fontSize=fs+'px';twPosicionar(article,box,a);agendar();};
+ box._twMovida=(cx,cy)=>{twGravarAncora(a,twAncorar(article,cx,cy));twPosicionar(article,box,a);twAltura(article);if(txt.innerText.trim())gravar();};
+ box._twApagar=async()=>{
+  if(box._twIndo)return;box._twIndo=true;clearTimeout(timer);
+  if(salvo){try{await request('DELETE',{id:a.id});}catch(e){box._twIndo=false;alert('Não foi possível apagar: '+e.message);return;}}
+  if(twSel.get(article)===box)twSelecionar(article,null);box.remove();twAltura(article);loaded.set(article,lista().filter(v=>v.id!==a.id));status(article,'Texto apagado');
+ };
+ box._twSaiu=()=>{if(!txt.innerText.trim()){box._twApagar();return;}if(timer)gravar();};
+ txt.addEventListener('input',()=>{twBarraPosicionar(article);twAltura(article);agendar();});
+ txt.addEventListener('paste',e=>{e.preventDefault();const t=(e.clipboardData||window.clipboardData).getData('text/plain');document.execCommand('insertText',false,t);});
+ txt.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();txt.blur();twSelecionar(article,null);}});
+ box.addEventListener('pointerdown',e=>{e.stopPropagation();twSelecionar(article,box);});
+ txt.addEventListener('focus',()=>twSelecionar(article,box));
+ twPosicionar(article,box,a);twAltura(article);
+ if(novo){twSelecionar(article,box);requestAnimationFrame(()=>{txt.focus({preventScroll:true});});}
+ return box;
 }
-async function createTypewriter(article,x,y){const a={id:makeId(),doc_key:article.dataset.lsaDoc,quote:'',prefix:'',suffix:'',kind:'note',color:'blue',note:'',x:Math.max(0,Math.round(x)),y:Math.max(0,Math.round(y)),font_size:16};try{await request('POST',a);const list=loaded.get(article)||[];list.push(a);loaded.set(article,list);renderTypewriter(article,a);status(article,'Texto inserido e sincronizado');}catch(e){alert('Não foi possível inserir o texto: '+e.message);status(article,'Falha ao inserir texto');}}
+function createTypewriter(article,cx,cy){
+ const a={id:makeId(),doc_key:article.dataset.lsaDoc,quote:'',prefix:'',suffix:'',kind:'note',color:'blue',note:'',x:0,y:0,width:260,height:145,font_size:TW_FONTE};
+ twGravarAncora(a,twAncorar(article,cx,cy));
+ renderTypewriter(article,a,{novo:true});
+ status(article,'Digite o texto; ele é salvo sozinho');
+}
+function twReposicionarTodas(article){
+ article.querySelectorAll(':scope>.lsa-typewriter').forEach(box=>{const a=(loaded.get(article)||[]).find(v=>v.id===box.dataset.typewriter)||box._twA;if(a)twPosicionar(article,box,a);});
+ twAltura(article);
+}
+// Caixa levada abaixo da última linha: o fundo do artigo cresce até ela, para não
+// ficar por cima do que vem depois na página.
+function twAltura(article){
+ let fundo=0;article.querySelectorAll(':scope>.lsa-typewriter').forEach(b=>{fundo=Math.max(fundo,b.offsetTop+b.offsetHeight);});
+ const cs=getComputedStyle(article),pt=parseFloat(cs.paddingTop)||0,pb=parseFloat(cs.paddingBottom)||0;
+ const borda=(parseFloat(cs.borderTopWidth)||0)+(parseFloat(cs.borderBottomWidth)||0);
+ const alvo=!fundo?0:Math.ceil(cs.boxSizing==='border-box'?fundo+10+pb+borda:fundo+10-pt);
+ const atual=parseFloat(article.style.minHeight)||0;
+ if(Math.abs(alvo-atual)>1)article.style.minHeight=alvo?alvo+'px':'';
+}
 function closeNoteEditor(article){document.querySelector('.lsa-note-pop')?.remove();}
 function openNoteEditor(article,{annotation=null,range=null}={}){
  closeNoteEditor(article);
@@ -204,12 +375,13 @@ async function addMark(article,kind,color,note,providedRange=null){
 function toolbar(article){
  if(article.dataset.lsaReady)return;article.dataset.lsaReady='1';
  article.dataset.lsaDoc=docKey(article);stack(article);
+ article.style.setProperty('position','relative','important');
  const bar=document.createElement('div');bar.className='lsa-tools';
  bar.innerHTML='<strong>✍️ Anotações</strong><span>Grifar:</span>'+
  Object.entries(COLORS).map(([k,v])=>'<button class="lsa-color" data-color="'+k+'" title="Grifar ('+k+')" style="background:'+v+'"></button>').join('')+
- '<button data-action="underline">Sublinhar</button><button data-action="note">💬 Comentário</button><button data-action="typewriter">T Máquina de escrever</button><button data-action="undo">↶ Desfazer</button><button data-action="redo">↷ Refazer</button><span class="lsa-status">Carregando…</span>';
+ '<button data-action="underline">Sublinhar</button><button data-action="note">💬 Comentário</button><button data-action="typewriter">T Caixa de texto</button><button data-action="undo">↶ Desfazer</button><button data-action="redo">↷ Refazer</button><span class="lsa-status">Carregando…</span>';
  article.prepend(bar);
- const help=document.createElement('div');help.className='lsa-help';help.textContent='Selecione um trecho e escolha uma ferramenta. As marcações são sincronizadas entre dispositivos.';bar.after(help);
+ const help=document.createElement('div');help.className='lsa-help';help.textContent='Grifar e sublinhar: escolha a ferramenta e selecione o trecho (ela fica ativa até você clicar de novo). Caixa de texto: clique em “T Caixa de texto” e depois no ponto onde quer escrever; para mover, toque no texto e arraste por “⠿ Mover”.';bar.after(help);
  function setTool(tool){
   activeTool.set(article,tool);
   bar.querySelectorAll('[data-color],[data-action="underline"]').forEach(x=>x.classList.toggle('lsa-active',!!tool&&((x.dataset.color&&tool.kind==='highlight'&&x.dataset.color===tool.color)||(x.dataset.action==='underline'&&tool.kind==='underline'))));
@@ -220,7 +392,7 @@ function toolbar(article){
   if(b.dataset.color){const next={kind:'highlight',color:b.dataset.color};const cur=activeTool.get(article);setTool(cur?.kind===next.kind&&cur.color===next.color?null:next);return;}
   if(b.dataset.action==='underline'){const cur=activeTool.get(article);setTool(cur?.kind==='underline'?null:{kind:'underline',color:'yellow'});return;}
   if(b.dataset.action==='note'){setTool(null);const sel=selectedRange(article);if(!sel){alert('Selecione primeiro o trecho que receberá o comentário.');return;}return openNoteEditor(article,{range:sel.range.cloneRange()});}
-  if(b.dataset.action==='typewriter'){const on=!freeNoteMode.get(article);freeNoteMode.set(article,on);setTool(null);b.classList.toggle('lsa-active',on);status(article,on?'Máquina de escrever ativa: clique no local para digitar':'Máquina de escrever desativada');return;}
+  if(b.dataset.action==='typewriter'){const on=!freeNoteMode.get(article);freeNoteMode.set(article,on);setTool(null);b.classList.toggle('lsa-active',on);article.classList.toggle('lsa-article-tw-mode',on);status(article,on?'Caixa de texto: toque ou clique no ponto onde quer escrever':'Caixa de texto desativada');return;}
   if(b.dataset.action==='undo'){setTool(null);await undo(article);return;}
   if(b.dataset.action==='redo'){setTool(null);await redo(article);return;}
  });
@@ -238,10 +410,15 @@ function toolbar(article){
  article.addEventListener('mouseleave',()=>setTool(null));
  article.addEventListener('click',async e=>{
   if(freeNoteMode.get(article)&&!e.target.closest('.lsa-tools,.lsa-note-box,.lsa-typewriter,.lsa-mark,.lsa-note-visible')){
-   const r=article.getBoundingClientRect();const x=e.clientX-r.left-article.clientLeft+article.scrollLeft;const y=e.clientY-r.top-article.clientTop+article.scrollTop;freeNoteMode.set(article,false);
+   const sel=getSelection();if(sel&&!sel.isCollapsed&&article.contains(sel.anchorNode))return;   // estava selecionando texto
+   // ponto do clique no sistema de coordenadas dos filhos absolutos (caixa de preenchimento do artigo)
+   const r=article.getBoundingClientRect();
+   const x=e.clientX-r.left-article.clientLeft+article.scrollLeft,y=e.clientY-r.top-article.clientTop+article.scrollTop;
+   freeNoteMode.set(article,false);article.classList.remove('lsa-article-tw-mode');
    bar.querySelector('[data-action="typewriter"]')?.classList.remove('lsa-active');
-   await createTypewriter(article,x,y);return;
+   createTypewriter(article,x,y);return;
   }
+  if(!e.target.closest('.lsa-typewriter,.lsa-tw-bar'))twSelecionar(article,null);
   const visibleNote=e.target.closest('.lsa-note-visible');
   if(visibleNote&&article.contains(visibleNote)){const box=article.querySelector('[data-note-box="'+CSS.escape(visibleNote.dataset.noteFor)+'"]');box?.scrollIntoView({block:'nearest',behavior:'smooth'});return;}
   const mark=e.target.closest('.lsa-mark');if(!mark||!article.contains(mark))return;
@@ -249,7 +426,9 @@ function toolbar(article){
   if(mark.dataset.kind==='note'){article.querySelector('[data-note-box="'+CSS.escape(id)+'"] .lsa-note-body')?.focus();return;}
   if(confirm('Apagar esta marcação?'))await remove(article,id,mark);
  });
- load(article);
+  // texto reflui (giro do celular, largura da janela): as caixas acompanham o parágrafo
+  let rz=null;new ResizeObserver(()=>{cancelAnimationFrame(rz);rz=requestAnimationFrame(()=>twReposicionarTodas(article));}).observe(article);
+  load(article);
 }
 
 async function remove(article,id,el){
@@ -258,7 +437,7 @@ async function remove(article,id,el){
  catch(e){alert('Não foi possível apagar: '+e.message);}
 }
 function findAndWrap(article,a){
- const walker=document.createTreeWalker(article,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement?.closest('.lsa-tools,.lsa-mark')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
+ const walker=document.createTreeWalker(article,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement?.closest('.lsa-tools,.lsa-mark,.lsa-help,.lsa-typewriter,.lsa-tw-bar,.lsa-note-box,.lsa-note-visible')?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT});
  let node;while((node=walker.nextNode())){const i=node.nodeValue.indexOf(a.quote);if(i<0)continue;
   const range=document.createRange();range.setStart(node,i);range.setEnd(node,i+a.quote.length);
   wrapRange(article,range,a);return true;
@@ -268,13 +447,20 @@ async function load(article){
  if(loaded.has(article))return;
  loaded.set(article,[]);
  try{
-  const q=await request('GET',null,API+'?doc='+encodeURIComponent(article.dataset.lsaDoc));
+  const doc=article.dataset.lsaDoc;
+  const q=await request('GET',null,API+'?doc='+encodeURIComponent(doc)+'&antigas=1');
+  // anotações gravadas com a chave antiga ("... · citado em N questões") passam para a chave nova
+  (q.annotations||[]).forEach(a=>{if(a.doc_key!==doc){a.doc_key=doc;request('POST',a).catch(e=>console.warn('[QuestIA anotações] migração',e));}});
   loaded.set(article,q.annotations||[]);
   (q.annotations||[]).forEach(a=>{if(a.kind==='note'&&!a.quote){if(a.color==='blue')renderTypewriter(article,a);else renderFreeNote(article,a);}else findAndWrap(article,a);});
   status(article,'Sincronizado');
- }catch(e){status(article,'Sem sincronização');console.warn('[QuestIA anotações]',e);}
+ }catch(e){status(article,falhaMsg(e,'Sem sincronização'));console.warn('[QuestIA anotações]',e);}
 }
 
+document.addEventListener('pointerdown',e=>{
+ if(e.target.closest&&e.target.closest('.lsa-typewriter,.lsa-tw-bar'))return;
+ document.querySelectorAll('.lsa-typewriter.lsa-selected').forEach(b=>{const art=b.closest('.ls-artigo');if(art&&!art.contains(e.target))twSelecionar(art,null);});
+},true);
 function scan(root){
  styles();
  (root.matches?.('.ls-artigo')?[root]:[]).concat([...root.querySelectorAll?.('.ls-artigo')||[]]).forEach(toolbar);
