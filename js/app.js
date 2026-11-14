@@ -993,7 +993,7 @@ function updateMateriaDatalist(){
 // API KEY
 // Dois modos de falar com a IA:
 //  1) CHAVE NO NAVEGADOR (sk-ant-...): chamada direta à Anthropic, como sempre foi.
-//  2) SENHA DO SERVIDOR (qualquer outro texto): o site publicado no Netlify guarda a
+//  2) SENHA DO SERVIDOR (qualquer outro texto): o site publicado no servidor guarda a
 //     chave numa variável de ambiente e a função /api/claude faz a chamada. A chave
 //     nunca chega ao navegador; quem tiver só o link do site, sem a senha, não usa a IA.
 // O mesmo campo aceita as duas coisas — o formato diz qual é.
@@ -1050,7 +1050,7 @@ async function chamarClaude(corpo){
   // Sem a função publicada, o servidor devolve uma página HTML de 404 — que o
   // chamador tentaria ler como JSON e mostraria um erro incompreensível.
   if(res.status===404||!(res.headers.get('content-type')||'').includes('json')){
-    return new Response(JSON.stringify({error:{message:'O servidor deste site não tem a função /api/claude. Ela só existe no site publicado pelo Netlify; aberto de outro jeito, use a chave sk-ant-... no campo do topo.'}}),
+    return new Response(JSON.stringify({error:{message:'O servidor deste site não disponibilizou a função /api/claude. Verifique a implantação e as variáveis secretas no provedor de hospedagem.'}}),
       {status:502,headers:{'Content-Type':'application/json'}});
   }
   return res;
