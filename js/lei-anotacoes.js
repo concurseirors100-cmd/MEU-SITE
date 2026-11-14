@@ -46,7 +46,7 @@ function record(el,a){stack(el);undoStack.get(el).push(a);if(undoStack.get(el).l
 function findAnnotation(el,id){return el.querySelector('[data-annotation="'+CSS.escape(id)+'"]');}
 function findNote(el,id){return el.querySelector('[data-note-for="'+CSS.escape(id)+'"]');}
 function showNote(mark,a){if(!a.note)return;const box=document.createElement('button');box.type='button';box.className='lsa-note-visible';box.dataset.noteFor=a.id;box.textContent='💬';box.title='Abrir comentário';mark.after(box);}
-function closeNoteEditor(article){article.querySelector('.lsa-note-pop')?.remove();}
+function closeNoteEditor(article){document.querySelector('.lsa-note-pop')?.remove();}
 function openNoteEditor(article,{annotation=null,range=null}={}){
  closeNoteEditor(article);
  const pop=document.createElement('div');pop.className='lsa-note-pop';
