@@ -234,6 +234,7 @@ body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--ink);min-h
 .r-sub.pos-prova{color:var(--aviso-forte);font-weight:700}
 .md-riscado{text-decoration:line-through;text-decoration-thickness:2px;color:var(--accent);opacity:.85}
 .md-marca{background:var(--aviso-bg);color:var(--ink);padding:0 3px;border-radius:3px}
+.md-sub{text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px}
 .md-sep{display:block;height:1px;background:var(--border);margin:14px 0}
 .md-cit{display:block;border-left:3px solid var(--border2);padding:2px 0 2px 12px;margin:6px 0;color:var(--ink2)}
 /* ===== FÓRMULAS DO TEC (\mbox{...} \over \mbox{...}) =====

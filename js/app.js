@@ -893,6 +893,10 @@ function formatQuestionText(text){
   esc=esc.replace(/~~(?=[^~]*?[A-Za-zÀ-ú0-9]{2})([^~\\{}]{1,400}?)~~/g,'<s class="md-riscado">$1</s>');   // (sem \ nem chaves: ~~ dentro de fórmula LaTeX é espaço)
     // trecho que o item errou
   esc=esc.replace(/==([^=]{1,300}?)==/g,'<mark class="md-marca">$1</mark>'); // grifo do professor
+  // Sublinhado do TEC ("o segmento sublinhado"). O coletor antigo perdia o <u>;
+  // a correção grava o trecho entre ⟪ ⟫, que não colide com markdown nem com imagem.
+  esc=esc.replace(/⟪([^⟪⟫]{1,400}?)⟫/g,'<u class="md-sub">$1</u>');
+  esc=esc.replace(/[⟪⟫]/g,'');   // marca órfã nunca aparece crua
   // Um separador já é espaço visual; o <br><br> grudado nele dobrava o buraco.
   esc=esc.replace(/(?:<br>){1,2}\u0001HR\u0001(?:<br>){1,2}/g,'\u0001HR\u0001');
   esc=esc.replace(/\u0001HR\u0001/g,'<span class="md-sep"></span>');
@@ -4707,7 +4711,7 @@ function renderPratica(q,aberto){
 // (enunciado + alternativas + gabarito). Na importação, só grava se os DOIS baterem —
 // questão que mudou no meio do caminho (tabela corrigida, gabarito trocado) é recusada.
 function impressaoQuestao(q){
-  const norm=x=>String(x||'').replace(/<[^>]+>/g,' ').replace(/[*_​]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
+  const norm=x=>String(x||'').replace(/<[^>]+>/g,' ').replace(/[*_​⟪⟫]/g,'').replace(/\s+/g,' ').trim().toLowerCase();
   const s=norm(q.questao)+'¦'+(q.alternativas||[]).map(norm).join('¦')+'¦'+indiceGabarito(q);
   let h=0x811c9dc5;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
   return h.toString(16).padStart(8,'0')+'-'+s.length.toString(36);
