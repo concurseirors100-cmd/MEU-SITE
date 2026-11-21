@@ -2161,7 +2161,7 @@ function planoLotePrioritario(ehNova){
   return{pend,hoje,dias,cota:Math.max(0,Math.min(pend,cotaDia-hoje))};
 }
 async function initStudy(){
-  renderAvisoReta();renderMateriasPausadas();
+  if(typeof renderAvisoReta==='function')renderAvisoReta();renderMateriasPausadas();   // 21/11: na partida rápida o calculadora-revisao.js ainda não carregou
   populateEstudarMaterias();
   populateEstudarSubtemas();
   sessOk=0;sessErr=0;ratingLock=false;

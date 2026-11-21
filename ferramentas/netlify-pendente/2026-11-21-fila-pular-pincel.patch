@@ -12,7 +12,7 @@ index a2fc514..2256166 100644
                    <button id="fc-pincel-btn" onclick="pincelToggle()" title="Pincel (tecla P) — rabiscar sobre a questão. O traço some ao passar para a próxima." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">✏️</button>
                    <button id="fc-calc-btn" class="calc-toggle-btn" onclick="toggleCalculadora()" title="Calculadora — abre um painel à direita, pra bater um índice sem sair do estudo." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🧮</button>
 diff --git a/js/app.js b/js/app.js
-index 85809e2..e9f7c4e 100644
+index 85809e2..cd3703a 100644
 --- a/js/app.js
 +++ b/js/app.js
 @@ -1276,7 +1276,10 @@ function renderMateriasPausadas(){
@@ -66,6 +66,15 @@ index 85809e2..e9f7c4e 100644
    return out;
  }
  // Desempate "aleatório" estável dentro do mesmo dia: a ordem muda de um dia para o
+@@ -2148,7 +2161,7 @@ function planoLotePrioritario(ehNova){
+   return{pend,hoje,dias,cota:Math.max(0,Math.min(pend,cotaDia-hoje))};
+ }
+ async function initStudy(){
+-  renderAvisoReta();renderMateriasPausadas();
++  if(typeof renderAvisoReta==='function')renderAvisoReta();renderMateriasPausadas();   // 21/11: na partida rápida o calculadora-revisao.js ainda não carregou
+   populateEstudarMaterias();
+   populateEstudarSubtemas();
+   sessOk=0;sessErr=0;ratingLock=false;
 @@ -2481,6 +2494,7 @@ function selectAlt(chosen){
      // 700px sobra vazio dos dois lados. Só alarga quando a explicação realmente
      // aparece; a pergunta e as alternativas continuam estreitas, que é onde a
@@ -395,7 +404,7 @@ index ac819bb..9c83c34 100644
  }
  
 diff --git a/sw.js b/sw.js
-index d693cc9..ae17172 100644
+index d693cc9..1afb76e 100644
 --- a/sw.js
 +++ b/sw.js
 @@ -3,7 +3,7 @@
@@ -403,7 +412,7 @@ index d693cc9..ae17172 100644
  // atualização publicada chega sem precisar limpar nada); sem internet, usa a última
  // cópia guardada. Os DADOS de estudo não passam por aqui — vivem no IndexedDB.
 -const CACHE = 'questia-v14';
-+const CACHE = 'questia-v15';
++const CACHE = 'questia-v16';
  const ESSENCIAIS = [
    './', './index.html', './css/style.css',
    './js/caixinhas.js', './js/app.js', './js/lupa.js', './js/variante.js', './js/leiseca.js', './js/perfil.js', './js/calculadora-revisao.js', './js/dashboard.js', './js/formulas.js',
