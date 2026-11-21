@@ -12,7 +12,7 @@ index a2fc514..2256166 100644
                    <button id="fc-pincel-btn" onclick="pincelToggle()" title="Pincel (tecla P) — rabiscar sobre a questão. O traço some ao passar para a próxima." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">✏️</button>
                    <button id="fc-calc-btn" class="calc-toggle-btn" onclick="toggleCalculadora()" title="Calculadora — abre um painel à direita, pra bater um índice sem sair do estudo." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🧮</button>
 diff --git a/js/app.js b/js/app.js
-index 85809e2..7b4a040 100644
+index 85809e2..4a2bcb1 100644
 --- a/js/app.js
 +++ b/js/app.js
 @@ -1276,7 +1276,10 @@ function renderMateriasPausadas(){
@@ -89,15 +89,7 @@ index 85809e2..7b4a040 100644
    populateEstudarMaterias();
    populateEstudarSubtemas();
    sessOk=0;sessErr=0;ratingLock=false;
-@@ -2481,6 +2499,7 @@ function selectAlt(chosen){
-     // 700px sobra vazio dos dois lados. Só alarga quando a explicação realmente
-     // aparece; a pergunta e as alternativas continuam estreitas, que é onde a
-     // leitura curta se beneficia de coluna mais estreita.
-+    pincelTravarLargura();   // grifo feito antes de responder não pode mudar de linha (21/11)
-     document.querySelector('.fc-wrap').classList.add('expanded');
-     document.getElementById('fc-ans').classList.add('show');
-     renderNotaQuestao(questions.find(x=>x.id===q.id)||q,true);
-@@ -2497,12 +2516,13 @@ function updateRatingLabels(q){
+@@ -2497,12 +2515,13 @@ function updateRatingLabels(q){
    for(let quality=0;quality<5;quality++){
      const el=document.getElementById('rsub-'+quality);if(!el)continue;
      const d=Math.max(sm2(quality,q.reps??0,q.ef??2.5,q.interval??0,true,q.fonte).intervalBase,esperaMinimaQualidade(q,quality));
@@ -112,7 +104,7 @@ index 85809e2..7b4a040 100644
      el.textContent = passaDaProva ? txt+' · depois da prova' : txt;
      el.classList.toggle('pos-prova',passaDaProva);
    }
-@@ -2537,12 +2557,14 @@ function rate(quality){
+@@ -2537,12 +2556,14 @@ function rate(quality){
    if(quality===0){questions[ri].erros++;sessErr++;}else{questions[ri].acertos++;sessOk++;}
    questions[ri].ultimaErrada=(quality===0);
    questions[ri].ultimaNota=quality;
@@ -128,7 +120,7 @@ index 85809e2..7b4a040 100644
    // Tempo gasto nesta questão: desconta o tempo em que a aba ficou oculta (trocou de
    // janela/aba) e limita a 3 minutos — rede de segurança pros casos que a troca de
    // aba não pegar (ex: ficou com o site em primeiro plano mas foi fazer outra coisa
-@@ -2587,16 +2609,47 @@ function suspenderAtual(){
+@@ -2587,16 +2608,47 @@ function suspenderAtual(){
    updateSidebar();updateSessBar();showCard();
    notify('Questão suspensa — nada foi apagado, reative em Banco → ⏸ Suspensas','ok');
  }
@@ -183,7 +175,7 @@ index 85809e2..7b4a040 100644
  }
  // ===== LIMITE POR ASSUNTO NO DIA (07/11) =====
  // Matéria com muito erro (ex.: Economia) enchia o dia com o MESMO assunto (Balanço de
-@@ -3130,6 +3183,43 @@ function bonusTendencia(q){
+@@ -3130,6 +3182,43 @@ function bonusTendencia(q){
    const ref=ehReformaTributaria(q)?(ehReformaAdministrativa(q)?BONUS_REFORMA_ADM:BONUS_REFORMA):1;
    return (ehProvaFiscalRecente(q)?BONUS_PROVA_FISCAL_RECENTE:1)*ref*fatorAssuntoFiscal(q);
  }
@@ -227,7 +219,7 @@ index 85809e2..7b4a040 100644
  const BONUS_FAVORITA_MAX=0.12;
  function calcScore(q,statsMap){
    const atrasoNorm=Math.min(Math.max(diasAtraso(q),0),60)/60; // achata em 60 dias; "nunca estudada" (9999) vira teto sozinho
-@@ -3145,7 +3235,7 @@ function calcScore(q,statsMap){
+@@ -3145,7 +3234,7 @@ function calcScore(q,statsMap){
  
    // atraso continua sendo desempate leve — bônus de até +20%, nunca 1/3 do total,
    // pra não deixar peso de edital baixo sobrepor peso alto só por estar mais velho.
@@ -236,7 +228,7 @@ index 85809e2..7b4a040 100644
  
    if(!q.favorita)return base;
    const dominioNorm=Math.min(Math.max(((q.ef??2.5)-1.3)/1.7,0),1);
-@@ -3182,7 +3272,7 @@ async function questoesForcadasPorCobertura(){
+@@ -3182,7 +3271,7 @@ async function questoesForcadasPorCobertura(){
      // pega a questão elegível dessa matéria com o intervalo mais LONGO — é a que
      // o SM-2 mais "esqueceu" de mandar de volta, então é a mais urgente pra forçar
      // consolidadas (nunca errou + 2 acertos) não servem para forçar cobertura até a prova
@@ -245,7 +237,7 @@ index 85809e2..7b4a040 100644
      if(!candidatas.length)return;
      // Escolhe pelo mesmo critério da fila (peso do assunto × taxa de erro × atraso), preferindo quem já venceu.
      // Antes: maior intervalo = a mais decorada, que o SM-2 tinha adiado de propósito.
-@@ -6254,15 +6344,32 @@ function pincelEls(){
+@@ -6254,15 +6343,36 @@ function pincelEls(){
  // o canvas é remedido sempre que isso acontece. Guardar os traços em coordenadas CSS
  // e redesenhar é o que mantém o rabisco no lugar depois de redimensionar a janela —
  // mexer no width/height de um canvas apaga o conteúdo dele.
@@ -254,8 +246,12 @@ index 85809e2..7b4a040 100644
 +// entre o enunciado e as alternativas (meu comentário, aviso) empurra o resto para baixo.
 +// Os traços ficavam em pixels fixos do cartão. Agora cada traço fica PRESO ao bloco em
 +// que começou (enunciado, uma alternativa, o comentário…), em coordenadas relativas a
-+// ele; e, se houver traço ao responder, o enunciado e as alternativas mantêm a largura
-+// que tinham (pincelTravarLargura), para as palavras não mudarem de linha.
++// ele.
++// 21/11 (tarde): travar a largura do enunciado deixava o cartão "encolhido" depois de
++// responder (pedido do Anderson: manter o tamanho original). Agora cada PONTO do traço
++// feito sobre texto fica preso à LETRA que está debaixo dele (nó de texto + posição +
++// distância até a letra). Se a palavra muda de linha quando o cartão alarga, o traço vai
++// junto. Ponto fora do texto (margem, círculo da letra) continua preso ao bloco.
 +const PINCEL_ANCORAS='.alt-btn, #fc-q, #fc-conflito, #fc-nota-pessoal, #fc-pratica, #fc-ans-gabarito, #fc-ans, #fc-rate, #fc-como, .fc-num';
  function pincelAjustar(){
    const {fc,cv}=pincelEls(); if(!fc||!cv)return;
@@ -282,25 +278,82 @@ index 85809e2..7b4a040 100644
  }
  function pincelRedesenhar(){
    const {cv}=pincelEls(); if(!cv)return;
-@@ -6272,12 +6379,13 @@ function pincelRedesenhar(){
+@@ -6271,20 +6381,89 @@ function pincelRedesenhar(){
+   ctx.clearRect(0,0,cv.width/dpr,cv.height/dpr);
    ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=4;   // 4 circula uma palavra sem cobri-la; acima de 5 o risco engole a letra
    ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#c0392b';
++  const cache=new Map();
    pincelTracos.forEach(t=>{
 -    if(t.length<2){  // clique seco vira um ponto, senão sumiria
 -      if(t.length===1){ctx.beginPath();ctx.arc(t[0].x,t[0].y,2,0,6.284);ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
-+    const o=pincelOrigem(t), p=t.pts;
++    const o=pincelOrigem(t), p=t.pts.map(pt=>pincelPosicao(pt,o,cache));
 +    if(p.length<2){  // clique seco vira um ponto, senão sumiria
-+      if(p.length===1){ctx.beginPath();ctx.arc(o.x+p[0].x,o.y+p[0].y,2,0,6.284);ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
++      if(p.length===1){ctx.beginPath();ctx.arc(p[0].x,p[0].y,2,0,6.284);ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
        return;
      }
 -    ctx.beginPath(); ctx.moveTo(t[0].x,t[0].y);
 -    for(let i=1;i<t.length;i++)ctx.lineTo(t[i].x,t[i].y);
-+    ctx.beginPath(); ctx.moveTo(o.x+p[0].x,o.y+p[0].y);
-+    for(let i=1;i<p.length;i++)ctx.lineTo(o.x+p[i].x,o.y+p[i].y);
++    ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
++    for(let i=1;i<p.length;i++){
++      // trecho que caiu em linhas diferentes depois de o texto quebrar de outro jeito:
++      // levanta a caneta em vez de riscar uma diagonal atravessando o enunciado
++      const a=t.pts[i-1],b=t.pts[i];
++      const orig=Math.hypot((b.cx??b.x)-(a.cx??a.x),(b.cy??b.y)-(a.cy??a.y));
++      if(Math.hypot(p[i].x-p[i-1].x,p[i].y-p[i-1].y)>orig+24)ctx.moveTo(p[i].x,p[i].y);
++      else ctx.lineTo(p[i].x,p[i].y);
++    }
      ctx.stroke();
    });
  }
-@@ -6285,6 +6393,30 @@ function pincelPonto(ev){
++// Retângulo atual de uma letra (nó de texto + posição), em coordenadas do cartão.
++function pincelRetLetra(node,k,cache){
++  const chave=node;let m=cache&&cache.get(chave);
++  if(m&&m.has(k))return m.get(k);
++  let r=null;
++  if(node.isConnected&&k<node.textContent.length){
++    const rg=document.createRange();rg.setStart(node,k);rg.setEnd(node,k+1);
++    const rs=rg.getClientRects();
++    if(rs.length&&(rs[0].width||rs[0].height)){const {fc}=pincelEls(),rf=fc.getBoundingClientRect();r={x:rs[0].left-rf.left,y:rs[0].top-rf.top,w:rs[0].width,h:rs[0].height};}
++  }
++  if(cache){if(!m){m=new Map();cache.set(chave,m);}m.set(k,r);}
++  return r;
++}
++function pincelPosicao(pt,o,cache){
++  if(pt.c){const r=pincelRetLetra(pt.c.node,pt.c.k,cache);if(r)return {x:r.x+pt.c.dx,y:r.y+pt.c.dy};}
++  return {x:o.x+pt.x,y:o.y+pt.y};
++}
++// Letra mais próxima do ponto (coordenadas da janela). O canvas fica por cima do texto,
++// então sai da frente só durante a consulta.
++function pincelLetraEm(cx,cy){
++  const {fc,cv}=pincelEls();if(!fc||!cv)return null;
++  const antes=cv.style.pointerEvents;cv.style.pointerEvents='none';
++  let node=null,off=0;
++  try{
++    if(document.caretRangeFromPoint){const r=document.caretRangeFromPoint(cx,cy);if(r){node=r.startContainer;off=r.startOffset;}}
++    else if(document.caretPositionFromPoint){const p=document.caretPositionFromPoint(cx,cy);if(p){node=p.offsetNode;off=p.offset;}}
++  }catch(e){}
++  cv.style.pointerEvents=antes;
++  if(!node||node.nodeType!==3||!fc.contains(node)||!node.textContent.length)return null;
++  const rf=fc.getBoundingClientRect(),x=cx-rf.left,y=cy-rf.top;
++  let melhor=null,md=Infinity;
++  for(const k of [off-1,off]){
++    if(k<0||k>=node.textContent.length)continue;
++    const r=pincelRetLetra(node,k,null);if(!r)continue;
++    const nx=Math.max(r.x,Math.min(x,r.x+r.w)),ny=Math.max(r.y,Math.min(y,r.y+r.h));
++    const d=Math.hypot(x-nx,y-ny);
++    if(d<md){md=d;melhor={k,r};}
++  }
++  if(!melhor||md>18)return null;   // longe do texto: fica preso ao bloco
++  return {node,k:melhor.k,dx:x-melhor.r.x,dy:y-melhor.r.y};
++}
++// Ponto novo do traço: posição relativa ao bloco + (se houver) a letra debaixo dele.
++function pincelNovoPonto(t,ev){
++  const o=pincelOrigem(t),q=pincelPonto(ev);
++  const pt={x:q.x-o.x,y:q.y-o.y,cx:q.x,cy:q.y};
++  const c=pincelLetraEm(ev.clientX,ev.clientY);if(c)pt.c=c;
++  return pt;
++}
+ function pincelPonto(ev){
    const {fc}=pincelEls(); const r=fc.getBoundingClientRect();
    return {x:ev.clientX-r.left, y:ev.clientY-r.top};
  }
@@ -316,31 +369,10 @@ index 85809e2..7b4a040 100644
 +  }
 +  return fc;
 +}
-+// Chamado em selectAlt, ANTES de o cartão alargar.
-+function pincelTravarLargura(){
-+  if(!pincelTracos.length)return;
-+  ['fc-q','fc-alts','fc-conflito','fc-nota-pessoal'].forEach(id=>{
-+    const el=document.getElementById(id);if(!el)return;
-+    const w=el.getBoundingClientRect().width;
-+    if(w>0)el.style.maxWidth=Math.round(w)+'px';
-+  });
-+}
-+function pincelDestravarLargura(){
-+  ['fc-q','fc-alts','fc-conflito','fc-nota-pessoal'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.maxWidth='';});
-+}
  function pincelToggle(){
    const {fc}=pincelEls(); if(!fc)return;
    pincelAtivo=!pincelAtivo;
-@@ -6298,7 +6430,7 @@ function pincelLimpar(){ pincelTracos=[]; pincelRedesenhar(); }
- // Chamado por showCard: novo cartão, papel limpo. Sai do modo pincel junto, senão
- // a próxima questão abriria com o clique nas alternativas bloqueado sem aviso.
- function pincelZerar(){
--  pincelTracos=[]; pincelAtual=null;
-+  pincelTracos=[]; pincelAtual=null; pincelDestravarLargura();
-   // Força o desligamento direto (classe + variável) em vez de depender de
-   // pincelToggle(): se o HTML tivesse sido salvo com o pincel ligado, o toggle
-   // baseado só em pincelAtivo (que sempre começa false) nunca removia a classe
-@@ -6316,13 +6448,20 @@ function pincelZerar(){
+@@ -6316,13 +6495,18 @@ function pincelZerar(){
    alvo.addEventListener('pointerdown',e=>{
      if(!pincelAtivo)return;
      e.preventDefault(); alvo.setPointerCapture(e.pointerId);
@@ -348,19 +380,18 @@ index 85809e2..7b4a040 100644
 +    const anc=pincelAncoraEm(e);
 +    pincelAtual={anc,base:null,pts:[]};
 +    pincelAtual.base=pincelOrigem(pincelAtual);
-+    const p=pincelPonto(e);
-+    pincelAtual.pts.push({x:p.x-pincelAtual.base.x,y:p.y-pincelAtual.base.y});
++    pincelAtual.pts.push(pincelNovoPonto(pincelAtual,e));
 +    pincelTracos.push(pincelAtual);
 +    pincelRedesenhar();
    });
    alvo.addEventListener('pointermove',e=>{
      if(!pincelAtivo||!pincelAtual)return;
 -    const p=pincelPonto(e), u=pincelAtual[pincelAtual.length-1];
-+    const o=pincelOrigem(pincelAtual), q=pincelPonto(e);
-+    const p={x:q.x-o.x,y:q.y-o.y}, u=pincelAtual.pts[pincelAtual.pts.length-1];
-     if(Math.hypot(p.x-u.x,p.y-u.y)<1.2)return;   // descarta tremor: menos pontos, traço mais limpo
+-    if(Math.hypot(p.x-u.x,p.y-u.y)<1.2)return;   // descarta tremor: menos pontos, traço mais limpo
 -    pincelAtual.push(p); pincelRedesenhar();
-+    pincelAtual.pts.push(p); pincelRedesenhar();
++    const q=pincelPonto(e), u=pincelAtual.pts[pincelAtual.pts.length-1];
++    if(Math.hypot(q.x-u.cx,q.y-u.cy)<1.2)return;   // descarta tremor: menos pontos, traço mais limpo
++    pincelAtual.pts.push(pincelNovoPonto(pincelAtual,e)); pincelRedesenhar();
    });
    const soltar=()=>{pincelAtual=null;};
    alvo.addEventListener('pointerup',soltar);
@@ -432,7 +463,7 @@ index ac819bb..1b27eaa 100644
  }
  
 diff --git a/sw.js b/sw.js
-index d693cc9..eda339f 100644
+index d693cc9..1a11252 100644
 --- a/sw.js
 +++ b/sw.js
 @@ -3,7 +3,7 @@
@@ -440,7 +471,7 @@ index d693cc9..eda339f 100644
  // atualização publicada chega sem precisar limpar nada); sem internet, usa a última
  // cópia guardada. Os DADOS de estudo não passam por aqui — vivem no IndexedDB.
 -const CACHE = 'questia-v14';
-+const CACHE = 'questia-v17';
++const CACHE = 'questia-v18';
  const ESSENCIAIS = [
    './', './index.html', './css/style.css',
    './js/caixinhas.js', './js/app.js', './js/lupa.js', './js/variante.js', './js/leiseca.js', './js/perfil.js', './js/calculadora-revisao.js', './js/dashboard.js', './js/formulas.js',

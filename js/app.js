@@ -2499,7 +2499,6 @@ function selectAlt(chosen){
     // 700px sobra vazio dos dois lados. Só alarga quando a explicação realmente
     // aparece; a pergunta e as alternativas continuam estreitas, que é onde a
     // leitura curta se beneficia de coluna mais estreita.
-    pincelTravarLargura();   // grifo feito antes de responder não pode mudar de linha (21/11)
     document.querySelector('.fc-wrap').classList.add('expanded');
     document.getElementById('fc-ans').classList.add('show');
     renderNotaQuestao(questions.find(x=>x.id===q.id)||q,true);
@@ -6349,8 +6348,12 @@ function pincelEls(){
 // entre o enunciado e as alternativas (meu comentário, aviso) empurra o resto para baixo.
 // Os traços ficavam em pixels fixos do cartão. Agora cada traço fica PRESO ao bloco em
 // que começou (enunciado, uma alternativa, o comentário…), em coordenadas relativas a
-// ele; e, se houver traço ao responder, o enunciado e as alternativas mantêm a largura
-// que tinham (pincelTravarLargura), para as palavras não mudarem de linha.
+// ele.
+// 21/11 (tarde): travar a largura do enunciado deixava o cartão "encolhido" depois de
+// responder (pedido do Anderson: manter o tamanho original). Agora cada PONTO do traço
+// feito sobre texto fica preso à LETRA que está debaixo dele (nó de texto + posição +
+// distância até a letra). Se a palavra muda de linha quando o cartão alarga, o traço vai
+// junto. Ponto fora do texto (margem, círculo da letra) continua preso ao bloco.
 const PINCEL_ANCORAS='.alt-btn, #fc-q, #fc-conflito, #fc-nota-pessoal, #fc-pratica, #fc-ans-gabarito, #fc-ans, #fc-rate, #fc-como, .fc-num';
 function pincelAjustar(){
   const {fc,cv}=pincelEls(); if(!fc||!cv)return;
@@ -6378,16 +6381,72 @@ function pincelRedesenhar(){
   ctx.clearRect(0,0,cv.width/dpr,cv.height/dpr);
   ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=4;   // 4 circula uma palavra sem cobri-la; acima de 5 o risco engole a letra
   ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#c0392b';
+  const cache=new Map();
   pincelTracos.forEach(t=>{
-    const o=pincelOrigem(t), p=t.pts;
+    const o=pincelOrigem(t), p=t.pts.map(pt=>pincelPosicao(pt,o,cache));
     if(p.length<2){  // clique seco vira um ponto, senão sumiria
-      if(p.length===1){ctx.beginPath();ctx.arc(o.x+p[0].x,o.y+p[0].y,2,0,6.284);ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
+      if(p.length===1){ctx.beginPath();ctx.arc(p[0].x,p[0].y,2,0,6.284);ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
       return;
     }
-    ctx.beginPath(); ctx.moveTo(o.x+p[0].x,o.y+p[0].y);
-    for(let i=1;i<p.length;i++)ctx.lineTo(o.x+p[i].x,o.y+p[i].y);
+    ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
+    for(let i=1;i<p.length;i++){
+      // trecho que caiu em linhas diferentes depois de o texto quebrar de outro jeito:
+      // levanta a caneta em vez de riscar uma diagonal atravessando o enunciado
+      const a=t.pts[i-1],b=t.pts[i];
+      const orig=Math.hypot((b.cx??b.x)-(a.cx??a.x),(b.cy??b.y)-(a.cy??a.y));
+      if(Math.hypot(p[i].x-p[i-1].x,p[i].y-p[i-1].y)>orig+24)ctx.moveTo(p[i].x,p[i].y);
+      else ctx.lineTo(p[i].x,p[i].y);
+    }
     ctx.stroke();
   });
+}
+// Retângulo atual de uma letra (nó de texto + posição), em coordenadas do cartão.
+function pincelRetLetra(node,k,cache){
+  const chave=node;let m=cache&&cache.get(chave);
+  if(m&&m.has(k))return m.get(k);
+  let r=null;
+  if(node.isConnected&&k<node.textContent.length){
+    const rg=document.createRange();rg.setStart(node,k);rg.setEnd(node,k+1);
+    const rs=rg.getClientRects();
+    if(rs.length&&(rs[0].width||rs[0].height)){const {fc}=pincelEls(),rf=fc.getBoundingClientRect();r={x:rs[0].left-rf.left,y:rs[0].top-rf.top,w:rs[0].width,h:rs[0].height};}
+  }
+  if(cache){if(!m){m=new Map();cache.set(chave,m);}m.set(k,r);}
+  return r;
+}
+function pincelPosicao(pt,o,cache){
+  if(pt.c){const r=pincelRetLetra(pt.c.node,pt.c.k,cache);if(r)return {x:r.x+pt.c.dx,y:r.y+pt.c.dy};}
+  return {x:o.x+pt.x,y:o.y+pt.y};
+}
+// Letra mais próxima do ponto (coordenadas da janela). O canvas fica por cima do texto,
+// então sai da frente só durante a consulta.
+function pincelLetraEm(cx,cy){
+  const {fc,cv}=pincelEls();if(!fc||!cv)return null;
+  const antes=cv.style.pointerEvents;cv.style.pointerEvents='none';
+  let node=null,off=0;
+  try{
+    if(document.caretRangeFromPoint){const r=document.caretRangeFromPoint(cx,cy);if(r){node=r.startContainer;off=r.startOffset;}}
+    else if(document.caretPositionFromPoint){const p=document.caretPositionFromPoint(cx,cy);if(p){node=p.offsetNode;off=p.offset;}}
+  }catch(e){}
+  cv.style.pointerEvents=antes;
+  if(!node||node.nodeType!==3||!fc.contains(node)||!node.textContent.length)return null;
+  const rf=fc.getBoundingClientRect(),x=cx-rf.left,y=cy-rf.top;
+  let melhor=null,md=Infinity;
+  for(const k of [off-1,off]){
+    if(k<0||k>=node.textContent.length)continue;
+    const r=pincelRetLetra(node,k,null);if(!r)continue;
+    const nx=Math.max(r.x,Math.min(x,r.x+r.w)),ny=Math.max(r.y,Math.min(y,r.y+r.h));
+    const d=Math.hypot(x-nx,y-ny);
+    if(d<md){md=d;melhor={k,r};}
+  }
+  if(!melhor||md>18)return null;   // longe do texto: fica preso ao bloco
+  return {node,k:melhor.k,dx:x-melhor.r.x,dy:y-melhor.r.y};
+}
+// Ponto novo do traço: posição relativa ao bloco + (se houver) a letra debaixo dele.
+function pincelNovoPonto(t,ev){
+  const o=pincelOrigem(t),q=pincelPonto(ev);
+  const pt={x:q.x-o.x,y:q.y-o.y,cx:q.x,cy:q.y};
+  const c=pincelLetraEm(ev.clientX,ev.clientY);if(c)pt.c=c;
+  return pt;
 }
 function pincelPonto(ev){
   const {fc}=pincelEls(); const r=fc.getBoundingClientRect();
@@ -6405,18 +6464,6 @@ function pincelAncoraEm(ev){
   }
   return fc;
 }
-// Chamado em selectAlt, ANTES de o cartão alargar.
-function pincelTravarLargura(){
-  if(!pincelTracos.length)return;
-  ['fc-q','fc-alts','fc-conflito','fc-nota-pessoal'].forEach(id=>{
-    const el=document.getElementById(id);if(!el)return;
-    const w=el.getBoundingClientRect().width;
-    if(w>0)el.style.maxWidth=Math.round(w)+'px';
-  });
-}
-function pincelDestravarLargura(){
-  ['fc-q','fc-alts','fc-conflito','fc-nota-pessoal'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.maxWidth='';});
-}
 function pincelToggle(){
   const {fc}=pincelEls(); if(!fc)return;
   pincelAtivo=!pincelAtivo;
@@ -6430,7 +6477,7 @@ function pincelLimpar(){ pincelTracos=[]; pincelRedesenhar(); }
 // Chamado por showCard: novo cartão, papel limpo. Sai do modo pincel junto, senão
 // a próxima questão abriria com o clique nas alternativas bloqueado sem aviso.
 function pincelZerar(){
-  pincelTracos=[]; pincelAtual=null; pincelDestravarLargura();
+  pincelTracos=[]; pincelAtual=null;
   // Força o desligamento direto (classe + variável) em vez de depender de
   // pincelToggle(): se o HTML tivesse sido salvo com o pincel ligado, o toggle
   // baseado só em pincelAtivo (que sempre começa false) nunca removia a classe
@@ -6451,17 +6498,15 @@ function pincelZerar(){
     const anc=pincelAncoraEm(e);
     pincelAtual={anc,base:null,pts:[]};
     pincelAtual.base=pincelOrigem(pincelAtual);
-    const p=pincelPonto(e);
-    pincelAtual.pts.push({x:p.x-pincelAtual.base.x,y:p.y-pincelAtual.base.y});
+    pincelAtual.pts.push(pincelNovoPonto(pincelAtual,e));
     pincelTracos.push(pincelAtual);
     pincelRedesenhar();
   });
   alvo.addEventListener('pointermove',e=>{
     if(!pincelAtivo||!pincelAtual)return;
-    const o=pincelOrigem(pincelAtual), q=pincelPonto(e);
-    const p={x:q.x-o.x,y:q.y-o.y}, u=pincelAtual.pts[pincelAtual.pts.length-1];
-    if(Math.hypot(p.x-u.x,p.y-u.y)<1.2)return;   // descarta tremor: menos pontos, traço mais limpo
-    pincelAtual.pts.push(p); pincelRedesenhar();
+    const q=pincelPonto(e), u=pincelAtual.pts[pincelAtual.pts.length-1];
+    if(Math.hypot(q.x-u.cx,q.y-u.cy)<1.2)return;   // descarta tremor: menos pontos, traço mais limpo
+    pincelAtual.pts.push(pincelNovoPonto(pincelAtual,e)); pincelRedesenhar();
   });
   const soltar=()=>{pincelAtual=null;};
   alvo.addEventListener('pointerup',soltar);
