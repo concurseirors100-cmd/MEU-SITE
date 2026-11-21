@@ -91,7 +91,10 @@ function varSubstituir(fila){
   const naFila=new Set(fila.map(q=>q.id));
   const filtroOk=q=>(typeof filtroSessao!=='function')||filtroSessao(q);
   // pool: todas as questões do escopo que podem servir de irmã
-  const pool=questions.filter(q=>varNoEscopo(q)&&!q.suspensa&&!(typeof materiaPausada==='function'&&materiaPausada(q))&&filtroOk(q));
+  // (21/11) Matemática/Estatística/RL entram também: lá a troca vale até para revisão de ERRO.
+  const quant=q=>typeof ehQuant==='function'&&ehQuant(q);
+  const pulada=q=>typeof estaPulada==='function'&&estaPulada(q);
+  const pool=questions.filter(q=>(varNoEscopo(q)||quant(q))&&!q.suspensa&&!pulada(q)&&!(typeof materiaPausada==='function'&&materiaPausada(q))&&filtroOk(q));
   const porDisp=new Map(),porAssunto=new Map();
   pool.forEach(q=>{
     const d=varDispDe(q);if(d){if(!porDisp.has(d))porDisp.set(d,[]);porDisp.get(d).push(q);}
@@ -112,6 +115,13 @@ function varSubstituir(fila){
   };
   let n=0;const out=[];
   for(const q of fila){
+    if(n<VAR_MAX_DIA&&quant(q)&&!varEhVirgem(q)&&(q.varCont||0)<QUANT_RODIZIO){
+      // Matemática/Estatística/RL: irmã do mesmo assunto, acertada OU errada da última vez
+      // (rever a mesma conta só testa se você lembra o número). Sem irmã disponível, a original fica.
+      const sub=escolher(porAssunto.get(chaveAssunto(q))||[],q);
+      if(sub){usados.add(sub.id);varSubst.set(sub.id,q.id);out.push(sub);n++;continue;}
+      out.push(q);continue;
+    }
     if(n<VAR_MAX_DIA&&varNoEscopo(q)&&!varEhVirgem(q)&&!ultimaFoiErro(q)&&(q.varCont||0)<VAR_RODIZIO){
       const d=varDispDe(q);
       let sub=null;
@@ -137,6 +147,15 @@ function varPosResposta(q,quality,acertouClique){
     if(o){
       const acertou=quality>0&&acertouClique!==false;
       const d=new Date();
+      if(typeof ehQuant==='function'&&ehQuant(o)){
+        // Matemática/Estatística/RL: a original nunca volta "amanhã na forma conhecida".
+        // Acertou a irmã → conta uma troca; errou → não conta (vem outra irmã pela dívida).
+        if(acertou)o.varCont=(o.varCont||0)+1;
+        d.setDate(d.getDate()+Math.max(QUANT_ADIA_MIN,Math.round((o.interval||0)/2)));
+        o.nextDue=ymd(d);
+        varSubst.delete(q.id);
+        return;
+      }
       if(acertou){
         o.varCont=(o.varCont||0)+1;
         d.setDate(d.getDate()+Math.max(VAR_ADIA_MIN,Math.round((o.interval||0)/2)));
@@ -149,7 +168,7 @@ function varPosResposta(q,quality,acertouClique){
     varSubst.delete(q.id);
     return;
   }
-  if(varNoEscopo(q))q.varCont=0;   // a original apareceu: reinicia o rodízio
+  if(varNoEscopo(q)||(typeof ehQuant==='function'&&ehQuant(q)))q.varCont=0;   // a original apareceu: reinicia o rodízio
 }
 function varPapel(q){
   if(!q)return null;
@@ -166,7 +185,10 @@ function varBadge(q){
   const s=document.createElement('span');
   s.className='var-badge';
   s.textContent=p==='variante'?'🔁 variante (gerada da lei)':'🔁 irmã no lugar de uma revisão';
-  s.title='A questão que venceu hoje foi trocada por outra da mesma regra. Ela volta mais tarde.';
+  const o=questions.find(x=>x.id===varSubst.get(q.id));
+  s.title=(typeof ehQuant==='function'&&ehQuant(o))
+    ?'Matemática/Estatística/RL: a questão que venceu hoje foi trocada por outra do mesmo assunto, para você treinar o cálculo e não lembrar a resposta. A original volta depois de '+QUANT_RODIZIO+' trocas.'
+    :'A questão que venceu hoje foi trocada por outra da mesma regra. Ela volta mais tarde.';
   el.appendChild(document.createTextNode(' '));el.appendChild(s);
 }
 

@@ -1276,7 +1276,10 @@ function renderMateriasPausadas(){
       return `<span class="tag" style="background:var(--indigo-light);color:var(--indigo-text);border:1px solid var(--indigo-border);display:inline-flex;gap:6px;align-items:center;text-transform:none;font-size:11px">⏸ ${esc(m)} · ${n}<button onclick="reativarMateriaPausada(${JSON.stringify(m).replace(/"/g,'&quot;')})" title="Reativar" style="background:none;border:none;cursor:pointer;color:inherit;font-weight:700;font-size:12px;padding:0">▶ reativar</button></span>`;}).join('')
     +'</div>';
 }
-function isDue(q){return!q.suspensa&&!q.soIrma&&!materiaPausada(q)&&(!q.nextDue||q.nextDue<=today());}
+// Pulada (⏭, 21/11): fica fora da fila até puladaAte, sem mexer no SM-2 (nextDue,
+// interval, ef continuam como estavam). Ver pularAtual().
+function estaPulada(q){return !!(q&&q.puladaAte&&q.puladaAte>today());}
+function isDue(q){return!q.suspensa&&!q.soIrma&&!materiaPausada(q)&&!estaPulada(q)&&(!q.nextDue||q.nextDue<=today());}
 function isLeech(q){return(q.erros||0)>=schedCfg().leechLimite;}
 // Quantos dias a questão está vencida (negativo = ainda não venceu)
 function diasAtraso(q){
@@ -1736,9 +1739,18 @@ function ultimaFoiErro(q){
   return (q.erros||0)>0&&(q.interval||0)<=3;
 }
 // Espera mínima que a nota impõe (usada no agendamento E no rótulo do botão)
+// ===== MATEMÁTICA, ESTATÍSTICA E RACIOCÍNIO LÓGICO (21/11, pedido do Anderson) =====
+// Nessas matérias rever a MESMA questão errada é decorar o número/resposta, não aprender
+// o cálculo. Então: errou → a original fica QUANT_ERRO_ESPERA dias longe (em vez de 5) e,
+// no meio-tempo, entram irmãs do mesmo assunto (dívida de irmã de sempre). Quando a
+// original vence, ela também é trocada por uma irmã do mesmo assunto (js/variante.js),
+// até QUANT_RODIZIO trocas seguidas; só depois disso a própria questão reaparece.
+const QUANT_ERRO_ESPERA=30, QUANT_RODIZIO=3, QUANT_ADIA_MIN=7;
+const RE_MATERIA_QUANT=/matem[aá]tica|estat[ií]stica|racioc[ií]nio l[oó]gico/i;
+function ehQuant(q){return !!q&&RE_MATERIA_QUANT.test((q.materia||'').trim());}
 function esperaMinimaQualidade(q,quality){
   const teto=schedCfg(q.fonte).tetoDias;
-  if(quality===0)return Math.min(QUAL_ERRO_ESPERA,teto);
+  if(quality===0)return Math.min(ehQuant(q)?QUANT_ERRO_ESPERA:QUAL_ERRO_ESPERA,teto);
   if(!(q.erros||0)&&!(q.acertos||0)){
     const ent=(schedCfg(q.fonte).entrada||[null,2,4,6,21])[quality]||0;
     return Math.min(ent+QUAL_ENTRADA_EXTRA,teto);
@@ -1798,7 +1810,7 @@ function escolherIrmas(limite,statsMap,excluir){
   const semResposta=q=>!(q.acertos||0)&&!(q.erros||0)&&!(q.reps||0);
   const recente=Date.now()-QUAL_IRMA_RECENTE*86400000;
   const porAssunto=new Map();
-  questions.forEach(q=>{if(q.suspensa||materiaPausada(q)||!filtroSessao(q))return;const k=chaveAssunto(q);if(!porAssunto.has(k))porAssunto.set(k,[]);porAssunto.get(k).push(q);});
+  questions.forEach(q=>{if(q.suspensa||materiaPausada(q)||estaPulada(q)||!filtroSessao(q))return;const k=chaveAssunto(q);if(!porAssunto.has(k))porAssunto.set(k,[]);porAssunto.get(k).push(q);});
   // disciplinas com dívida; dentro de cada uma, os assuntos pelo score do assunto
   const scoreAssunto=k=>{const st=statsMap.get(k)||{taxaErro:0.5};return pesoDaMateria(k.split('§')[0])*(0.5+st.taxaErro);};
   const porDisc=new Map();
@@ -1920,7 +1932,8 @@ function ordenarNovasPorDeficit(arr,statsMap,jaNaFila){
 const TETO_FATIA_NOVAS=2;
 function statsComTetoFatia(statsMap,teto){
   const out=new Map();
-  statsMap.forEach((v,k)=>out.set(k,{...v,fatiaMateria:Math.min(v.fatiaMateria,teto)}));
+  // Civil/Empresarial (21/11): teto maior, para o assunto mais cobrado pela banca vir antes.
+  statsMap.forEach((v,k)=>out.set(k,{...v,fatiaMateria:Math.min(v.fatiaMateria,MATERIAS_CIVIL_EMP.has(k.split('§')[0])?Math.max(teto,TETO_FATIA_CIVIL):teto)}));
   return out;
 }
 // Desempate "aleatório" estável dentro do mesmo dia: a ordem muda de um dia para o
@@ -2481,6 +2494,7 @@ function selectAlt(chosen){
     // 700px sobra vazio dos dois lados. Só alarga quando a explicação realmente
     // aparece; a pergunta e as alternativas continuam estreitas, que é onde a
     // leitura curta se beneficia de coluna mais estreita.
+    pincelTravarLargura();   // grifo feito antes de responder não pode mudar de linha (21/11)
     document.querySelector('.fc-wrap').classList.add('expanded');
     document.getElementById('fc-ans').classList.add('show');
     renderNotaQuestao(questions.find(x=>x.id===q.id)||q,true);
@@ -2497,7 +2511,7 @@ function updateRatingLabels(q){
   for(let quality=0;quality<5;quality++){
     const el=document.getElementById('rsub-'+quality);if(!el)continue;
     const d=Math.max(sm2(quality,q.reps??0,q.ef??2.5,q.interval??0,true,q.fonte).intervalBase,esperaMinimaQualidade(q,quality));
-    const txt=d===1?'amanhã':d<30?d+' dias':d<365?Math.round(d/30)+' meses':'1 ano';
+    const txt=d===1?'amanhã':d<30?d+' dias':d<365?(Math.round(d/30)===1?'1 mês':Math.round(d/30)+' meses'):'1 ano';
     // Aviso de consequência invisível: um intervalo que cai DEPOIS da prova significa
     // que aquela questão não volta mais antes dela. O rótulo dizia só "1 ano", e
     // "1 ano" não deixa óbvio que a prova é daqui a 44 dias. Vale para qualquer nota —
@@ -2537,6 +2551,7 @@ function rate(quality){
   if(quality===0){questions[ri].erros++;sessErr++;}else{questions[ri].acertos++;sessOk++;}
   questions[ri].ultimaErrada=(quality===0);
   questions[ri].ultimaNota=quality;
+  if(questions[ri].puladaAte||questions[ri].pulos){delete questions[ri].puladaAte;delete questions[ri].pulos;}   // respondida: o adiamento do ⏭ deixa de valer
   if(eraNova)registrarNovaServida(questions[ri]);   // alimenta a fila de inéditas por déficit
   // Mostrar feedback de intervalo usando o intervalo real calculado pelo SM-2
   const dias=r.espera||r.interval;
@@ -2587,16 +2602,47 @@ function suspenderAtual(){
   updateSidebar();updateSessBar();showCard();
   notify('Questão suspensa — nada foi apagado, reative em Banco → ⏸ Suspensas','ok');
 }
-// ===== PULAR (07/11) =====
-// Diferente de suspender: a questão vai para o FIM da fila de hoje e nada muda no
-// agendamento nem no banco. Se não der tempo de chegar nela, continua vencida amanhã.
+// ===== PULAR (07/11; refeito em 21/11) =====
+// Antes a pulada ia para o FIM da fila de hoje. Problema relatado pelo Anderson: no fim
+// do dia a fila virava só as puladas, girando em loop, e nenhuma questão nova entrava
+// (a pulada também voltava a cada nova montagem da fila, porque continuava vencida).
+// Agora: a pulada SAI da fila de hoje e fica fora por PULAR_DIAS (3 dias; 7 se pular de
+// novo; 14 da terceira vez em diante), e a vaga é reposta na hora por outra questão
+// elegível. O SM-2 não muda (nextDue, intervalo e facilidade ficam como estavam): o
+// adiamento fica num campo à parte (puladaAte), apagado quando a questão é respondida.
+const PULAR_DIAS=[3,7,14];
 function pularAtual(){
   if(ratingLock)return;
   const q=dueQueue[dueIdx];if(!q)return;
-  if(dueQueue.length-dueIdx<=1){notify('É a última questão da fila de hoje — não há para onde pular','ok');return;}
-  dueQueue.splice(dueIdx,1);dueQueue.push(q);
-  showCard();
-  notify('⏭ Pulada — volta no fim da fila de hoje. Agendamento intacto.','ok');
+  const real=questions.find(x=>x.id===q.id)||q;
+  const n=real.pulos||0, dias=PULAR_DIAS[Math.min(n,PULAR_DIAS.length-1)];
+  const d=new Date(today()+'T12:00:00');d.setDate(d.getDate()+dias);
+  real.puladaAte=ymd(d);real.pulos=n+1;
+  if(q!==real){q.puladaAte=real.puladaAte;q.pulos=real.pulos;}
+  save();
+  dueQueue.splice(dueIdx,1);
+  const sub=reposicaoDePulo(q);
+  if(sub)dueQueue.push(sub);
+  updateSidebar();updateSessBar();showCard();
+  notify(`⏭ Pulada — volta em ${dias} dias${n?' (pulada '+(n+1)+'x)':''}. Agendamento intacto${sub?'; outra questão entrou na vaga':''}.`,'ok');
+}
+// Escolhe a questão que ocupa a vaga da pulada: do mesmo tipo (inédita por inédita,
+// revisão por revisão; erro em aberto na frente), de outro assunto, sem passar do
+// limite por assunto do dia. Score simples, sem remontar a fila inteira.
+function reposicaoDePulo(pulada){
+  const naFila=new Set(dueQueue.map(x=>x.id));naFila.add(pulada.id);
+  const ehNovaQ=x=>!(x.acertos||0)&&!(x.erros||0)&&!(x.reps||0);
+  const kP=chaveAssunto(pulada);
+  const cont=new Map();dueQueue.slice(dueIdx).forEach(x=>{const k=chaveAssunto(x);cont.set(k,(cont.get(k)||0)+1);});
+  const pool=questions.filter(x=>naSessao(x)&&!naFila.has(x.id)&&chaveAssunto(x)!==kP&&(cont.get(chaveAssunto(x))||0)<LIMITE_ASSUNTO_DIA);
+  if(!pool.length)return null;
+  const st=estatisticasPorAssunto();
+  const mesmoTipo=pool.filter(x=>ehNovaQ(x)===ehNovaQ(pulada));
+  const lista=mesmoTipo.length?mesmoTipo:pool;
+  const prio=x=>(!ehNovaQ(x)&&ultimaFoiErro(x)&&!ehLeech(x))?1:0;
+  let melhor=null,mp=-1,ms=-Infinity;
+  for(const x of lista){const p=prio(x),sc=calcScore(x,st);if(p>mp||(p===mp&&sc>ms)){melhor=x;mp=p;ms=sc;}}
+  return melhor;
 }
 // ===== LIMITE POR ASSUNTO NO DIA (07/11) =====
 // Matéria com muito erro (ex.: Economia) enchia o dia com o MESMO assunto (Balanço de
@@ -3130,6 +3176,43 @@ function bonusTendencia(q){
   const ref=ehReformaTributaria(q)?(ehReformaAdministrativa(q)?BONUS_REFORMA_ADM:BONUS_REFORMA):1;
   return (ehProvaFiscalRecente(q)?BONUS_PROVA_FISCAL_RECENTE:1)*ref*fatorAssuntoFiscal(q);
 }
+// ===== DIREITO CIVIL E EMPRESARIAL: PRIMEIRO O OBJETIVO E O REPETIDO (21/11) =====
+// Pedido do Anderson: disciplina de peso baixo (2 pts no perfil SEFAZ), em que vale mais
+// fixar o que a banca repete do que descer em assunto profundo. E o que tem caído na área
+// fiscal são enunciados curtos e objetivos. Só reordena DENTRO de Civil/Empresarial
+// (a média do fator fica perto de 1, então a disciplina não ganha nem perde vagas):
+//   · tamanho do enunciado + alternativas, em percentil dentro das duas matérias:
+//     a mais curta ×1,35, a mais longa ×0,70 (linear no meio);
+//   · questão de prova da área fiscal (SEFAZ, ISS, Receita, auditor/agente fiscal) ×1,15,
+//     as demais ×0,95;
+//   · "mais repetido": nas inéditas, o teto da fatia do assunto sobe de 2 para
+//     TETO_FATIA_CIVIL — assunto com muita questão de banca passa na frente (o bônus do
+//     mapa de assuntos cobrados em provas fiscais continua valendo por cima).
+const MATERIAS_CIVIL_EMP=new Set(['Direito Civil','Direito Empresarial (Comercial)']);
+const TETO_FATIA_CIVIL=4, CIVIL_CURTA=1.35, CIVIL_LONGA=0.70, CIVIL_FISCAL=1.15, CIVIL_NAO_FISCAL=0.95;
+const RE_ORIGEM_FISCAL_AMPLA=/SEFAZ|SEFA\b|SEF\b|SEFIN|SER PB|\bISS\b|Receita|Fisco|Fiscal|Tribut|Rendas/i;
+function ehCivilEmp(q){return !!q&&MATERIAS_CIVIL_EMP.has((q.materia||'').trim());}
+let cacheTamCivil=null;
+function tamanhoTexto(q){
+  const t=String(q.questao||'')+' '+(Array.isArray(q.alternativas)?q.alternativas.join(' '):'');
+  return t.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim().length;
+}
+function percentilTamanhoCivil(q){
+  const civ=questions.filter(ehCivilEmp);
+  if(!cacheTamCivil||cacheTamCivil.n!==civ.length||cacheTamCivil.qs!==questions){
+    const ord=civ.map(x=>({id:x.id,t:tamanhoTexto(x)})).sort((a,b)=>a.t-b.t);
+    const m=new Map();ord.forEach((o,i)=>m.set(o.id,ord.length>1?i/(ord.length-1):0.5));
+    cacheTamCivil={n:civ.length,qs:questions,m};
+  }
+  const v=cacheTamCivil.m.get(q.id);
+  return v===undefined?0.5:v;
+}
+function fatorCivilObjetivo(q){
+  if(!ehCivilEmp(q))return 1;
+  const fTam=CIVIL_CURTA-(CIVIL_CURTA-CIVIL_LONGA)*percentilTamanhoCivil(q);
+  const fOrig=RE_ORIGEM_FISCAL_AMPLA.test((q.origem||'')+' '+(q.banca||''))?CIVIL_FISCAL:CIVIL_NAO_FISCAL;
+  return fTam*fOrig;
+}
 const BONUS_FAVORITA_MAX=0.12;
 function calcScore(q,statsMap){
   const atrasoNorm=Math.min(Math.max(diasAtraso(q),0),60)/60; // achata em 60 dias; "nunca estudada" (9999) vira teto sozinho
@@ -3145,7 +3228,7 @@ function calcScore(q,statsMap){
 
   // atraso continua sendo desempate leve — bônus de até +20%, nunca 1/3 do total,
   // pra não deixar peso de edital baixo sobrepor peso alto só por estar mais velho.
-  const base=scoreBase*(1+atrasoNorm*0.2)*bonusTendencia(q);
+  const base=scoreBase*(1+atrasoNorm*0.2)*bonusTendencia(q)*fatorCivilObjetivo(q);
 
   if(!q.favorita)return base;
   const dominioNorm=Math.min(Math.max(((q.ef??2.5)-1.3)/1.7,0),1);
@@ -3182,7 +3265,7 @@ async function questoesForcadasPorCobertura(){
     // pega a questão elegível dessa matéria com o intervalo mais LONGO — é a que
     // o SM-2 mais "esqueceu" de mandar de volta, então é a mais urgente pra forçar
     // consolidadas (nunca errou + 2 acertos) não servem para forçar cobertura até a prova
-    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
+    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!estaPulada(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
     if(!candidatas.length)return;
     // Escolhe pelo mesmo critério da fila (peso do assunto × taxa de erro × atraso), preferindo quem já venceu.
     // Antes: maior intervalo = a mais decorada, que o SM-2 tinha adiado de propósito.
@@ -6254,15 +6337,32 @@ function pincelEls(){
 // o canvas é remedido sempre que isso acontece. Guardar os traços em coordenadas CSS
 // e redesenhar é o que mantém o rabisco no lugar depois de redimensionar a janela —
 // mexer no width/height de um canvas apaga o conteúdo dele.
+// 21/11 — o grifo saía do lugar ao abrir o comentário. Duas causas: (1) o cartão alarga
+// (700 px → até 1160 px) e o enunciado quebra as linhas em outro ponto; (2) o que aparece
+// entre o enunciado e as alternativas (meu comentário, aviso) empurra o resto para baixo.
+// Os traços ficavam em pixels fixos do cartão. Agora cada traço fica PRESO ao bloco em
+// que começou (enunciado, uma alternativa, o comentário…), em coordenadas relativas a
+// ele; e, se houver traço ao responder, o enunciado e as alternativas mantêm a largura
+// que tinham (pincelTravarLargura), para as palavras não mudarem de linha.
+const PINCEL_ANCORAS='.alt-btn, #fc-q, #fc-conflito, #fc-nota-pessoal, #fc-pratica, #fc-ans-gabarito, #fc-ans, #fc-rate, #fc-como, .fc-num';
 function pincelAjustar(){
   const {fc,cv}=pincelEls(); if(!fc||!cv)return;
   const r=fc.getBoundingClientRect();
   const dpr=window.devicePixelRatio||1;
   const w=Math.max(1,Math.round(r.width)), h=Math.max(1,Math.round(r.height));
-  if(cv.width===Math.round(w*dpr)&&cv.height===Math.round(h*dpr))return;
-  cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
-  cv.style.width=w+'px'; cv.style.height=h+'px';
-  pincelRedesenhar();
+  if(!(cv.width===Math.round(w*dpr)&&cv.height===Math.round(h*dpr))){
+    cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+    cv.style.width=w+'px'; cv.style.height=h+'px';
+  }
+  pincelRedesenhar();   // sempre: um bloco pode mudar de lugar sem o cartão mudar de tamanho
+}
+// Posição atual do canto do bloco-âncora, em coordenadas do cartão.
+function pincelOrigem(t){
+  const {fc}=pincelEls();
+  if(!fc||!t.anc||!t.anc.isConnected||t.anc===fc)return t.base||{x:0,y:0};
+  const rf=fc.getBoundingClientRect(), ra=t.anc.getBoundingClientRect();
+  if(!ra.width&&!ra.height)return t.base||{x:0,y:0};   // bloco escondido: fica onde estava
+  return {x:ra.left-rf.left, y:ra.top-rf.top};
 }
 function pincelRedesenhar(){
   const {cv}=pincelEls(); if(!cv)return;
@@ -6272,18 +6372,43 @@ function pincelRedesenhar(){
   ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=4;   // 4 circula uma palavra sem cobri-la; acima de 5 o risco engole a letra
   ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#c0392b';
   pincelTracos.forEach(t=>{
-    if(t.length<2){  // clique seco vira um ponto, senão sumiria
-      if(t.length===1){ctx.beginPath();ctx.arc(t[0].x,t[0].y,2,0,6.284);ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
+    const o=pincelOrigem(t), p=t.pts;
+    if(p.length<2){  // clique seco vira um ponto, senão sumiria
+      if(p.length===1){ctx.beginPath();ctx.arc(o.x+p[0].x,o.y+p[0].y,2,0,6.284);ctx.fillStyle=ctx.strokeStyle;ctx.fill();}
       return;
     }
-    ctx.beginPath(); ctx.moveTo(t[0].x,t[0].y);
-    for(let i=1;i<t.length;i++)ctx.lineTo(t[i].x,t[i].y);
+    ctx.beginPath(); ctx.moveTo(o.x+p[0].x,o.y+p[0].y);
+    for(let i=1;i<p.length;i++)ctx.lineTo(o.x+p[i].x,o.y+p[i].y);
     ctx.stroke();
   });
 }
 function pincelPonto(ev){
   const {fc}=pincelEls(); const r=fc.getBoundingClientRect();
   return {x:ev.clientX-r.left, y:ev.clientY-r.top};
+}
+// Bloco do cartão que está debaixo do ponto (o canvas fica por cima, então olha a pilha).
+function pincelAncoraEm(ev){
+  const {fc}=pincelEls();
+  const pilha=document.elementsFromPoint?document.elementsFromPoint(ev.clientX,ev.clientY):[];
+  for(const el of pilha){
+    if(el.id==='fc-pincel')continue;
+    if(!fc.contains(el))break;
+    const a=el.closest(PINCEL_ANCORAS);
+    if(a&&fc.contains(a))return a;
+  }
+  return fc;
+}
+// Chamado em selectAlt, ANTES de o cartão alargar.
+function pincelTravarLargura(){
+  if(!pincelTracos.length)return;
+  ['fc-q','fc-alts','fc-conflito','fc-nota-pessoal'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    const w=el.getBoundingClientRect().width;
+    if(w>0)el.style.maxWidth=Math.round(w)+'px';
+  });
+}
+function pincelDestravarLargura(){
+  ['fc-q','fc-alts','fc-conflito','fc-nota-pessoal'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.maxWidth='';});
 }
 function pincelToggle(){
   const {fc}=pincelEls(); if(!fc)return;
@@ -6298,7 +6423,7 @@ function pincelLimpar(){ pincelTracos=[]; pincelRedesenhar(); }
 // Chamado por showCard: novo cartão, papel limpo. Sai do modo pincel junto, senão
 // a próxima questão abriria com o clique nas alternativas bloqueado sem aviso.
 function pincelZerar(){
-  pincelTracos=[]; pincelAtual=null;
+  pincelTracos=[]; pincelAtual=null; pincelDestravarLargura();
   // Força o desligamento direto (classe + variável) em vez de depender de
   // pincelToggle(): se o HTML tivesse sido salvo com o pincel ligado, o toggle
   // baseado só em pincelAtivo (que sempre começa false) nunca removia a classe
@@ -6316,13 +6441,20 @@ function pincelZerar(){
   alvo.addEventListener('pointerdown',e=>{
     if(!pincelAtivo)return;
     e.preventDefault(); alvo.setPointerCapture(e.pointerId);
-    pincelAtual=[pincelPonto(e)]; pincelTracos.push(pincelAtual);
+    const anc=pincelAncoraEm(e);
+    pincelAtual={anc,base:null,pts:[]};
+    pincelAtual.base=pincelOrigem(pincelAtual);
+    const p=pincelPonto(e);
+    pincelAtual.pts.push({x:p.x-pincelAtual.base.x,y:p.y-pincelAtual.base.y});
+    pincelTracos.push(pincelAtual);
+    pincelRedesenhar();
   });
   alvo.addEventListener('pointermove',e=>{
     if(!pincelAtivo||!pincelAtual)return;
-    const p=pincelPonto(e), u=pincelAtual[pincelAtual.length-1];
+    const o=pincelOrigem(pincelAtual), q=pincelPonto(e);
+    const p={x:q.x-o.x,y:q.y-o.y}, u=pincelAtual.pts[pincelAtual.pts.length-1];
     if(Math.hypot(p.x-u.x,p.y-u.y)<1.2)return;   // descarta tremor: menos pontos, traço mais limpo
-    pincelAtual.push(p); pincelRedesenhar();
+    pincelAtual.pts.push(p); pincelRedesenhar();
   });
   const soltar=()=>{pincelAtual=null;};
   alvo.addEventListener('pointerup',soltar);
