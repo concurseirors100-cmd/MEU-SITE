@@ -12,7 +12,7 @@ index a2fc514..2256166 100644
                    <button id="fc-pincel-btn" onclick="pincelToggle()" title="Pincel (tecla P) — rabiscar sobre a questão. O traço some ao passar para a próxima." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">✏️</button>
                    <button id="fc-calc-btn" class="calc-toggle-btn" onclick="toggleCalculadora()" title="Calculadora — abre um painel à direita, pra bater um índice sem sair do estudo." style="background:none;border:none;cursor:pointer;font-size:16px;line-height:1;color:var(--muted);padding:0 2px">🧮</button>
 diff --git a/js/app.js b/js/app.js
-index 85809e2..cd3703a 100644
+index 85809e2..7b4a040 100644
 --- a/js/app.js
 +++ b/js/app.js
 @@ -1276,7 +1276,10 @@ function renderMateriasPausadas(){
@@ -23,11 +23,11 @@ index 85809e2..cd3703a 100644
 +// Pulada (⏭, 21/11): fica fora da fila até puladaAte, sem mexer no SM-2 (nextDue,
 +// interval, ef continuam como estavam). Ver pularAtual().
 +function estaPulada(q){return !!(q&&q.puladaAte&&q.puladaAte>today());}
-+function isDue(q){return!q.suspensa&&!q.soIrma&&!materiaPausada(q)&&!estaPulada(q)&&(!q.nextDue||q.nextDue<=today());}
++function isDue(q){return!q.suspensa&&!q.soIrma&&!materiaPausada(q)&&!estaPulada(q)&&!quantSaiDaRevisao(q)&&(!q.nextDue||q.nextDue<=today());}
  function isLeech(q){return(q.erros||0)>=schedCfg().leechLimite;}
  // Quantos dias a questão está vencida (negativo = ainda não venceu)
  function diasAtraso(q){
-@@ -1736,9 +1739,18 @@ function ultimaFoiErro(q){
+@@ -1736,9 +1739,23 @@ function ultimaFoiErro(q){
    return (q.erros||0)>0&&(q.interval||0)<=3;
  }
  // Espera mínima que a nota impõe (usada no agendamento E no rótulo do botão)
@@ -40,6 +40,11 @@ index 85809e2..cd3703a 100644
 +const QUANT_ERRO_ESPERA=30, QUANT_RODIZIO=3, QUANT_ADIA_MIN=7;
 +const RE_MATERIA_QUANT=/matem[aá]tica|estat[ií]stica|racioc[ií]nio l[oó]gico/i;
 +function ehQuant(q){return !!q&&RE_MATERIA_QUANT.test((q.materia||'').trim());}
++// 21/11 (2º pedido): o banco dessas matérias é grande, então questão JÁ ERRADA não volta
++// mais à revisão — nem depois dos 30 dias. Regra calculada na hora (erros > 0), nada é
++// gravado nem apagado: tirar esta linha devolve tudo como estava. As irmãs inéditas do
++// mesmo assunto continuam entrando depois de cada erro.
++function quantSaiDaRevisao(q){return ehQuant(q)&&(q.erros||0)>0;}
  function esperaMinimaQualidade(q,quality){
    const teto=schedCfg(q.fonte).tetoDias;
 -  if(quality===0)return Math.min(QUAL_ERRO_ESPERA,teto);
@@ -47,7 +52,7 @@ index 85809e2..cd3703a 100644
    if(!(q.erros||0)&&!(q.acertos||0)){
      const ent=(schedCfg(q.fonte).entrada||[null,2,4,6,21])[quality]||0;
      return Math.min(ent+QUAL_ENTRADA_EXTRA,teto);
-@@ -1798,7 +1810,7 @@ function escolherIrmas(limite,statsMap,excluir){
+@@ -1798,7 +1815,7 @@ function escolherIrmas(limite,statsMap,excluir){
    const semResposta=q=>!(q.acertos||0)&&!(q.erros||0)&&!(q.reps||0);
    const recente=Date.now()-QUAL_IRMA_RECENTE*86400000;
    const porAssunto=new Map();
@@ -56,7 +61,16 @@ index 85809e2..cd3703a 100644
    // disciplinas com dívida; dentro de cada uma, os assuntos pelo score do assunto
    const scoreAssunto=k=>{const st=statsMap.get(k)||{taxaErro:0.5};return pesoDaMateria(k.split('§')[0])*(0.5+st.taxaErro);};
    const porDisc=new Map();
-@@ -1920,7 +1932,8 @@ function ordenarNovasPorDeficit(arr,statsMap,jaNaFila){
+@@ -1813,7 +1830,7 @@ function escolherIrmas(limite,statsMap,excluir){
+       const k=porDisc.get(d)[volta];if(!k)continue;algum=true;
+       if(out.length>=limite)break;
+       const err=histResp.dividas.get(k).errados;
+-      const cand=porAssunto.get(k).filter(q=>!usados.has(q.id)&&!err.has(q.id)&&!ultimaFoiErro(q)&&!ehLeech(q)&&!consolidadaAteProva(q)&&!((histResp.ultimoTs.get(q.id)||0)>recente));
++      const cand=porAssunto.get(k).filter(q=>!usados.has(q.id)&&!err.has(q.id)&&!ultimaFoiErro(q)&&!quantSaiDaRevisao(q)&&!ehLeech(q)&&!consolidadaAteProva(q)&&!((histResp.ultimoTs.get(q.id)||0)>recente));
+       // Caixinhas: a irmã sai, se possível, da MESMA forma de cobrança da questão errada.
+       const cxErr=cxDisponivel()?new Set([...err].map(cxIdDoId).filter(x=>x!==undefined)):new Set();
+       const mesmaForma=cxErr.size?cand.filter(q=>cxErr.has(cxIdDe(q))):[];
+@@ -1920,7 +1937,8 @@ function ordenarNovasPorDeficit(arr,statsMap,jaNaFila){
  const TETO_FATIA_NOVAS=2;
  function statsComTetoFatia(statsMap,teto){
    const out=new Map();
@@ -66,7 +80,7 @@ index 85809e2..cd3703a 100644
    return out;
  }
  // Desempate "aleatório" estável dentro do mesmo dia: a ordem muda de um dia para o
-@@ -2148,7 +2161,7 @@ function planoLotePrioritario(ehNova){
+@@ -2148,7 +2166,7 @@ function planoLotePrioritario(ehNova){
    return{pend,hoje,dias,cota:Math.max(0,Math.min(pend,cotaDia-hoje))};
  }
  async function initStudy(){
@@ -75,7 +89,7 @@ index 85809e2..cd3703a 100644
    populateEstudarMaterias();
    populateEstudarSubtemas();
    sessOk=0;sessErr=0;ratingLock=false;
-@@ -2481,6 +2494,7 @@ function selectAlt(chosen){
+@@ -2481,6 +2499,7 @@ function selectAlt(chosen){
      // 700px sobra vazio dos dois lados. Só alarga quando a explicação realmente
      // aparece; a pergunta e as alternativas continuam estreitas, que é onde a
      // leitura curta se beneficia de coluna mais estreita.
@@ -83,7 +97,7 @@ index 85809e2..cd3703a 100644
      document.querySelector('.fc-wrap').classList.add('expanded');
      document.getElementById('fc-ans').classList.add('show');
      renderNotaQuestao(questions.find(x=>x.id===q.id)||q,true);
-@@ -2497,7 +2511,7 @@ function updateRatingLabels(q){
+@@ -2497,12 +2516,13 @@ function updateRatingLabels(q){
    for(let quality=0;quality<5;quality++){
      const el=document.getElementById('rsub-'+quality);if(!el)continue;
      const d=Math.max(sm2(quality,q.reps??0,q.ef??2.5,q.interval??0,true,q.fonte).intervalBase,esperaMinimaQualidade(q,quality));
@@ -92,7 +106,13 @@ index 85809e2..cd3703a 100644
      // Aviso de consequência invisível: um intervalo que cai DEPOIS da prova significa
      // que aquela questão não volta mais antes dela. O rótulo dizia só "1 ano", e
      // "1 ano" não deixa óbvio que a prova é daqui a 44 dias. Vale para qualquer nota —
-@@ -2537,6 +2551,7 @@ function rate(quality){
+     // o Fácil já fazia isso muito antes da nota Dominada existir.
+     const passaDaProva = ateProva!==null && ateProva>0 && d>ateProva;
++    if(quality===0&&ehQuant(q)){el.textContent='sai da revisão';el.classList.remove('pos-prova');continue;}
+     el.textContent = passaDaProva ? txt+' · depois da prova' : txt;
+     el.classList.toggle('pos-prova',passaDaProva);
+   }
+@@ -2537,12 +2557,14 @@ function rate(quality){
    if(quality===0){questions[ri].erros++;sessErr++;}else{questions[ri].acertos++;sessOk++;}
    questions[ri].ultimaErrada=(quality===0);
    questions[ri].ultimaNota=quality;
@@ -100,7 +120,15 @@ index 85809e2..cd3703a 100644
    if(eraNova)registrarNovaServida(questions[ri]);   // alimenta a fila de inéditas por déficit
    // Mostrar feedback de intervalo usando o intervalo real calculado pelo SM-2
    const dias=r.espera||r.interval;
-@@ -2587,16 +2602,47 @@ function suspenderAtual(){
+   const intervalMsg=dias<=0?'hoje':dias===1?'amanhã':`em ${dias} dia${dias>1?'s':''}`;
+   const labels=['✗ Errei','↩ Difícil','✓ Bom','⚡ Fácil','🎓 Dominada'];
+-  notify(`${labels[quality]} — próxima revisão ${intervalMsg}`,'interval');
++  if(quality===0&&ehQuant(questions[ri]))notify('✗ Errei — esta questão sai da revisão; entra uma irmã inédita do mesmo assunto','interval');
++  else notify(`${labels[quality]} — próxima revisão ${intervalMsg}`,'interval');
+   // Tempo gasto nesta questão: desconta o tempo em que a aba ficou oculta (trocou de
+   // janela/aba) e limita a 3 minutos — rede de segurança pros casos que a troca de
+   // aba não pegar (ex: ficou com o site em primeiro plano mas foi fazer outra coisa
+@@ -2587,16 +2609,47 @@ function suspenderAtual(){
    updateSidebar();updateSessBar();showCard();
    notify('Questão suspensa — nada foi apagado, reative em Banco → ⏸ Suspensas','ok');
  }
@@ -155,7 +183,7 @@ index 85809e2..cd3703a 100644
  }
  // ===== LIMITE POR ASSUNTO NO DIA (07/11) =====
  // Matéria com muito erro (ex.: Economia) enchia o dia com o MESMO assunto (Balanço de
-@@ -3130,6 +3176,43 @@ function bonusTendencia(q){
+@@ -3130,6 +3183,43 @@ function bonusTendencia(q){
    const ref=ehReformaTributaria(q)?(ehReformaAdministrativa(q)?BONUS_REFORMA_ADM:BONUS_REFORMA):1;
    return (ehProvaFiscalRecente(q)?BONUS_PROVA_FISCAL_RECENTE:1)*ref*fatorAssuntoFiscal(q);
  }
@@ -199,7 +227,7 @@ index 85809e2..cd3703a 100644
  const BONUS_FAVORITA_MAX=0.12;
  function calcScore(q,statsMap){
    const atrasoNorm=Math.min(Math.max(diasAtraso(q),0),60)/60; // achata em 60 dias; "nunca estudada" (9999) vira teto sozinho
-@@ -3145,7 +3228,7 @@ function calcScore(q,statsMap){
+@@ -3145,7 +3235,7 @@ function calcScore(q,statsMap){
  
    // atraso continua sendo desempate leve — bônus de até +20%, nunca 1/3 do total,
    // pra não deixar peso de edital baixo sobrepor peso alto só por estar mais velho.
@@ -208,16 +236,16 @@ index 85809e2..cd3703a 100644
  
    if(!q.favorita)return base;
    const dominioNorm=Math.min(Math.max(((q.ef??2.5)-1.3)/1.7,0),1);
-@@ -3182,7 +3265,7 @@ async function questoesForcadasPorCobertura(){
+@@ -3182,7 +3272,7 @@ async function questoesForcadasPorCobertura(){
      // pega a questão elegível dessa matéria com o intervalo mais LONGO — é a que
      // o SM-2 mais "esqueceu" de mandar de volta, então é a mais urgente pra forçar
      // consolidadas (nunca errou + 2 acertos) não servem para forçar cobertura até a prova
 -    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
-+    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!estaPulada(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
++    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!estaPulada(q)&&!quantSaiDaRevisao(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
      if(!candidatas.length)return;
      // Escolhe pelo mesmo critério da fila (peso do assunto × taxa de erro × atraso), preferindo quem já venceu.
      // Antes: maior intervalo = a mais decorada, que o SM-2 tinha adiado de propósito.
-@@ -6254,15 +6337,32 @@ function pincelEls(){
+@@ -6254,15 +6344,32 @@ function pincelEls(){
  // o canvas é remedido sempre que isso acontece. Guardar os traços em coordenadas CSS
  // e redesenhar é o que mantém o rabisco no lugar depois de redimensionar a janela —
  // mexer no width/height de um canvas apaga o conteúdo dele.
@@ -254,7 +282,7 @@ index 85809e2..cd3703a 100644
  }
  function pincelRedesenhar(){
    const {cv}=pincelEls(); if(!cv)return;
-@@ -6272,12 +6372,13 @@ function pincelRedesenhar(){
+@@ -6272,12 +6379,13 @@ function pincelRedesenhar(){
    ctx.lineCap='round'; ctx.lineJoin='round'; ctx.lineWidth=4;   // 4 circula uma palavra sem cobri-la; acima de 5 o risco engole a letra
    ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()||'#c0392b';
    pincelTracos.forEach(t=>{
@@ -272,7 +300,7 @@ index 85809e2..cd3703a 100644
      ctx.stroke();
    });
  }
-@@ -6285,6 +6386,30 @@ function pincelPonto(ev){
+@@ -6285,6 +6393,30 @@ function pincelPonto(ev){
    const {fc}=pincelEls(); const r=fc.getBoundingClientRect();
    return {x:ev.clientX-r.left, y:ev.clientY-r.top};
  }
@@ -303,7 +331,7 @@ index 85809e2..cd3703a 100644
  function pincelToggle(){
    const {fc}=pincelEls(); if(!fc)return;
    pincelAtivo=!pincelAtivo;
-@@ -6298,7 +6423,7 @@ function pincelLimpar(){ pincelTracos=[]; pincelRedesenhar(); }
+@@ -6298,7 +6430,7 @@ function pincelLimpar(){ pincelTracos=[]; pincelRedesenhar(); }
  // Chamado por showCard: novo cartão, papel limpo. Sai do modo pincel junto, senão
  // a próxima questão abriria com o clique nas alternativas bloqueado sem aviso.
  function pincelZerar(){
@@ -312,7 +340,7 @@ index 85809e2..cd3703a 100644
    // Força o desligamento direto (classe + variável) em vez de depender de
    // pincelToggle(): se o HTML tivesse sido salvo com o pincel ligado, o toggle
    // baseado só em pincelAtivo (que sempre começa false) nunca removia a classe
-@@ -6316,13 +6441,20 @@ function pincelZerar(){
+@@ -6316,13 +6448,20 @@ function pincelZerar(){
    alvo.addEventListener('pointerdown',e=>{
      if(!pincelAtivo)return;
      e.preventDefault(); alvo.setPointerCapture(e.pointerId);
@@ -337,7 +365,7 @@ index 85809e2..cd3703a 100644
    const soltar=()=>{pincelAtual=null;};
    alvo.addEventListener('pointerup',soltar);
 diff --git a/js/variante.js b/js/variante.js
-index ac819bb..9c83c34 100644
+index ac819bb..1b27eaa 100644
 --- a/js/variante.js
 +++ b/js/variante.js
 @@ -91,7 +91,10 @@ function varSubstituir(fila){
@@ -348,7 +376,7 @@ index ac819bb..9c83c34 100644
 +  // (21/11) Matemática/Estatística/RL entram também: lá a troca vale até para revisão de ERRO.
 +  const quant=q=>typeof ehQuant==='function'&&ehQuant(q);
 +  const pulada=q=>typeof estaPulada==='function'&&estaPulada(q);
-+  const pool=questions.filter(q=>(varNoEscopo(q)||quant(q))&&!q.suspensa&&!pulada(q)&&!(typeof materiaPausada==='function'&&materiaPausada(q))&&filtroOk(q));
++  const pool=questions.filter(q=>(varNoEscopo(q)||quant(q))&&!q.suspensa&&!pulada(q)&&!(typeof quantSaiDaRevisao==='function'&&quantSaiDaRevisao(q))&&!(typeof materiaPausada==='function'&&materiaPausada(q))&&filtroOk(q));
    const porDisp=new Map(),porAssunto=new Map();
    pool.forEach(q=>{
      const d=varDispDe(q);if(d){if(!porDisp.has(d))porDisp.set(d,[]);porDisp.get(d).push(q);}
@@ -404,7 +432,7 @@ index ac819bb..9c83c34 100644
  }
  
 diff --git a/sw.js b/sw.js
-index d693cc9..1afb76e 100644
+index d693cc9..eda339f 100644
 --- a/sw.js
 +++ b/sw.js
 @@ -3,7 +3,7 @@
@@ -412,7 +440,7 @@ index d693cc9..1afb76e 100644
  // atualização publicada chega sem precisar limpar nada); sem internet, usa a última
  // cópia guardada. Os DADOS de estudo não passam por aqui — vivem no IndexedDB.
 -const CACHE = 'questia-v14';
-+const CACHE = 'questia-v16';
++const CACHE = 'questia-v17';
  const ESSENCIAIS = [
    './', './index.html', './css/style.css',
    './js/caixinhas.js', './js/app.js', './js/lupa.js', './js/variante.js', './js/leiseca.js', './js/perfil.js', './js/calculadora-revisao.js', './js/dashboard.js', './js/formulas.js',

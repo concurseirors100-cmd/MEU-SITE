@@ -94,7 +94,7 @@ function varSubstituir(fila){
   // (21/11) Matemática/Estatística/RL entram também: lá a troca vale até para revisão de ERRO.
   const quant=q=>typeof ehQuant==='function'&&ehQuant(q);
   const pulada=q=>typeof estaPulada==='function'&&estaPulada(q);
-  const pool=questions.filter(q=>(varNoEscopo(q)||quant(q))&&!q.suspensa&&!pulada(q)&&!(typeof materiaPausada==='function'&&materiaPausada(q))&&filtroOk(q));
+  const pool=questions.filter(q=>(varNoEscopo(q)||quant(q))&&!q.suspensa&&!pulada(q)&&!(typeof quantSaiDaRevisao==='function'&&quantSaiDaRevisao(q))&&!(typeof materiaPausada==='function'&&materiaPausada(q))&&filtroOk(q));
   const porDisp=new Map(),porAssunto=new Map();
   pool.forEach(q=>{
     const d=varDispDe(q);if(d){if(!porDisp.has(d))porDisp.set(d,[]);porDisp.get(d).push(q);}

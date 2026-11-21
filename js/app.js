@@ -1279,7 +1279,7 @@ function renderMateriasPausadas(){
 // Pulada (⏭, 21/11): fica fora da fila até puladaAte, sem mexer no SM-2 (nextDue,
 // interval, ef continuam como estavam). Ver pularAtual().
 function estaPulada(q){return !!(q&&q.puladaAte&&q.puladaAte>today());}
-function isDue(q){return!q.suspensa&&!q.soIrma&&!materiaPausada(q)&&!estaPulada(q)&&(!q.nextDue||q.nextDue<=today());}
+function isDue(q){return!q.suspensa&&!q.soIrma&&!materiaPausada(q)&&!estaPulada(q)&&!quantSaiDaRevisao(q)&&(!q.nextDue||q.nextDue<=today());}
 function isLeech(q){return(q.erros||0)>=schedCfg().leechLimite;}
 // Quantos dias a questão está vencida (negativo = ainda não venceu)
 function diasAtraso(q){
@@ -1748,6 +1748,11 @@ function ultimaFoiErro(q){
 const QUANT_ERRO_ESPERA=30, QUANT_RODIZIO=3, QUANT_ADIA_MIN=7;
 const RE_MATERIA_QUANT=/matem[aá]tica|estat[ií]stica|racioc[ií]nio l[oó]gico/i;
 function ehQuant(q){return !!q&&RE_MATERIA_QUANT.test((q.materia||'').trim());}
+// 21/11 (2º pedido): o banco dessas matérias é grande, então questão JÁ ERRADA não volta
+// mais à revisão — nem depois dos 30 dias. Regra calculada na hora (erros > 0), nada é
+// gravado nem apagado: tirar esta linha devolve tudo como estava. As irmãs inéditas do
+// mesmo assunto continuam entrando depois de cada erro.
+function quantSaiDaRevisao(q){return ehQuant(q)&&(q.erros||0)>0;}
 function esperaMinimaQualidade(q,quality){
   const teto=schedCfg(q.fonte).tetoDias;
   if(quality===0)return Math.min(ehQuant(q)?QUANT_ERRO_ESPERA:QUAL_ERRO_ESPERA,teto);
@@ -1825,7 +1830,7 @@ function escolherIrmas(limite,statsMap,excluir){
       const k=porDisc.get(d)[volta];if(!k)continue;algum=true;
       if(out.length>=limite)break;
       const err=histResp.dividas.get(k).errados;
-      const cand=porAssunto.get(k).filter(q=>!usados.has(q.id)&&!err.has(q.id)&&!ultimaFoiErro(q)&&!ehLeech(q)&&!consolidadaAteProva(q)&&!((histResp.ultimoTs.get(q.id)||0)>recente));
+      const cand=porAssunto.get(k).filter(q=>!usados.has(q.id)&&!err.has(q.id)&&!ultimaFoiErro(q)&&!quantSaiDaRevisao(q)&&!ehLeech(q)&&!consolidadaAteProva(q)&&!((histResp.ultimoTs.get(q.id)||0)>recente));
       // Caixinhas: a irmã sai, se possível, da MESMA forma de cobrança da questão errada.
       const cxErr=cxDisponivel()?new Set([...err].map(cxIdDoId).filter(x=>x!==undefined)):new Set();
       const mesmaForma=cxErr.size?cand.filter(q=>cxErr.has(cxIdDe(q))):[];
@@ -2517,6 +2522,7 @@ function updateRatingLabels(q){
     // "1 ano" não deixa óbvio que a prova é daqui a 44 dias. Vale para qualquer nota —
     // o Fácil já fazia isso muito antes da nota Dominada existir.
     const passaDaProva = ateProva!==null && ateProva>0 && d>ateProva;
+    if(quality===0&&ehQuant(q)){el.textContent='sai da revisão';el.classList.remove('pos-prova');continue;}
     el.textContent = passaDaProva ? txt+' · depois da prova' : txt;
     el.classList.toggle('pos-prova',passaDaProva);
   }
@@ -2557,7 +2563,8 @@ function rate(quality){
   const dias=r.espera||r.interval;
   const intervalMsg=dias<=0?'hoje':dias===1?'amanhã':`em ${dias} dia${dias>1?'s':''}`;
   const labels=['✗ Errei','↩ Difícil','✓ Bom','⚡ Fácil','🎓 Dominada'];
-  notify(`${labels[quality]} — próxima revisão ${intervalMsg}`,'interval');
+  if(quality===0&&ehQuant(questions[ri]))notify('✗ Errei — esta questão sai da revisão; entra uma irmã inédita do mesmo assunto','interval');
+  else notify(`${labels[quality]} — próxima revisão ${intervalMsg}`,'interval');
   // Tempo gasto nesta questão: desconta o tempo em que a aba ficou oculta (trocou de
   // janela/aba) e limita a 3 minutos — rede de segurança pros casos que a troca de
   // aba não pegar (ex: ficou com o site em primeiro plano mas foi fazer outra coisa
@@ -3265,7 +3272,7 @@ async function questoesForcadasPorCobertura(){
     // pega a questão elegível dessa matéria com o intervalo mais LONGO — é a que
     // o SM-2 mais "esqueceu" de mandar de volta, então é a mais urgente pra forçar
     // consolidadas (nunca errou + 2 acertos) não servem para forçar cobertura até a prova
-    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!estaPulada(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
+    const candidatas=questions.filter(q=>!q.suspensa&&!materiaPausada(q)&&!estaPulada(q)&&!quantSaiDaRevisao(q)&&!consolidadaAteProva(q)&&(q.materia||'').trim()===m);
     if(!candidatas.length)return;
     // Escolhe pelo mesmo critério da fila (peso do assunto × taxa de erro × atraso), preferindo quem já venceu.
     // Antes: maior intervalo = a mais decorada, que o SM-2 tinha adiado de propósito.
